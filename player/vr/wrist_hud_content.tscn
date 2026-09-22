@@ -1,0 +1,78 @@
+[gd_scene format=3 uid="uid://cvjwrist00001"]
+
+[ext_resource type="Script" path="res://player/vr/wrist_hud_content.gd" id="1_wrist"]
+
+[sub_resource type="StyleBoxFlat" id="Bg"]
+bg_color = Color(0.06, 0.06, 0.09, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.35, 0.55, 0.9, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="WristRoot" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Bg")
+script = ExtResource("1_wrist")
+
+[node name="Rows" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Row1" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="WristPlay" type="Button" parent="Rows/Row1"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(96, 72)
+text = "▶"
+
+[node name="WristTime" type="Label" parent="Rows/Row1"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+text = "--:-- / --:--"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ScrubRow" type="VBoxContainer" parent="Rows"]
+layout_mode = 2
+
+[node name="ScrubLabel" type="Label" parent="Rows/ScrubRow"]
+layout_mode = 2
+text = "Position"
+
+[node name="WristScrub" type="HSlider" parent="Rows/ScrubRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 40)
+min_value = 0.0
+max_value = 100.0
+step = 0.01
+
+[node name="VolumeRow" type="VBoxContainer" parent="Rows"]
+layout_mode = 2
+
+[node name="VolLabel" type="Label" parent="Rows/VolumeRow"]
+layout_mode = 2
+text = "Volume"
+
+[node name="WristVolume" type="HSlider" parent="Rows/VolumeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 32)
+min_value = 0.0
+max_value = 1.0
+step = 0.01
+value = 1.0

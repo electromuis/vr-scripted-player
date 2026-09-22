@@ -2,16 +2,20 @@ extends Node3D
 
 const DEFAULT_SCRIPT := "res://examples/moving_screen/script.json"
 const MEDIA_CONTROLS_SCENE := preload("res://player/ui/media_controls.tscn")
+const VIDEO_BRIDGE_SCRIPT := preload("res://player/video_bridge.gd")
 
 @onready var runner: ScriptRunner = $ScriptRunner
 @onready var status_label: Label = $UI/TopBar/StatusLabel
 @onready var vr_button: Button = $UI/TopBar/VRButton
 @onready var mode_label: Label = $UI/TopBar/ModeLabel
 @onready var xr_mode: XRMode = $XRMode
+@onready var xr_rig: XRRig = $XRRig
 @onready var desktop_camera: Camera3D = $DesktopCamera
 @onready var video_quad: MeshInstance3D = $Stage/VideoQuad
+@onready var fade_overlay: FadeOverlay = $UI/FadeOverlay
+@onready var floating_panel: FloatingPanel = $FloatingPanel
 
-var _mpv  # MPVPlayer, dynamically instantiated (GDExtension class)
+var _video: VideoBridge
 var _cli_script_path: String = ""
 var _cli_live_sync_port: int = 0
 var _cli_start_in_vr: bool = false
@@ -26,12 +30,18 @@ func _ready() -> void:
 
 	runner.script_loaded.connect(_on_script_loaded)
 	runner.script_load_failed.connect(_on_script_load_failed)
+	runner.seeked.connect(_on_runner_seeked)
+	runner.play_state_changed.connect(_on_runner_play_state_changed)
+	runner.event_fired.connect(_on_event_fired)
 
 	vr_button.pressed.connect(_on_vr_button)
+	xr_rig.menu_button_pressed.connect(floating_panel.toggle)
 	_update_mode_label()
 	_init_media_controls()
-
-	_init_mpv()
+	_init_video()
+	floating_panel.set_mouse_camera(desktop_camera)
+	# Wrist HUD binds after the runner is ready so it can poll play state.
+	_bind_wrist_hud()
 
 	var script_to_load := _cli_script_path if _cli_script_path != "" else DEFAULT_SCRIPT
 	_set_status("Loading %s..." % script_to_load)
@@ -46,6 +56,8 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_vr"):
 		_on_vr_button()
+	elif event.is_action_pressed("toggle_panel"):
+		floating_panel.toggle()
 
 
 func _parse_cli_args() -> void:
@@ -68,12 +80,22 @@ func _on_vr_button() -> void:
 
 
 func _on_entered_vr() -> void:
+	# Snap the rig to the desktop camera's XZ + yaw so the VR view picks up
+	# where the desktop view left off — Whirligig / VRChat-style continuity.
+	# Y stays at 0 (floor); the XRCamera3D's local Y=1.6 plus SteamVR height
+	# calibration determines actual eye height.
+	var d := desktop_camera.global_position
+	var e := desktop_camera.global_rotation
+	xr_rig.set_view(Vector3(d.x, 0.0, d.z), Vector3(0.0, rad_to_deg(e.y), 0.0))
 	desktop_camera.current = false
+	xr_rig.set_visuals_enabled(true)
+	xr_rig.xr_camera.current = true
 	_update_mode_label()
 	vr_button.text = "Exit VR"
 
 
 func _on_exited_vr() -> void:
+	xr_rig.set_visuals_enabled(false)
 	desktop_camera.current = true
 	_update_mode_label()
 	vr_button.text = "Enter VR"
@@ -93,51 +115,44 @@ func _init_media_controls() -> void:
 	mc.bind(runner)
 
 
-func _init_mpv() -> void:
-	if not ClassDB.class_exists("MPVPlayer"):
-		_set_status("MPVPlayer class not found — is bin/godot_mpv.gdextension loaded?")
+func _bind_wrist_hud() -> void:
+	# XRToolsViewport2DIn3D defers scene instantiation until after
+	# `RenderingServer.frame_post_draw` + `process_frame` (see
+	# addons/godot-xr-tools/objects/viewport_2d_in_3d.gd:150). One frame
+	# isn't enough — poll for up to ~1s so we're robust to boot jitter.
+	var content: Node = null
+	for _i in 60:
+		content = xr_rig.wrist_content()
+		if content != null:
+			break
+		await get_tree().process_frame
+	if content == null:
+		push_warning("Wrist HUD content never appeared — bind skipped.")
 		return
-	_mpv = ClassDB.instantiate("MPVPlayer")
-	add_child(_mpv)
-	if not _mpv.initialize():
-		_set_status("MPV failed to initialize.")
-		_mpv = null
-		return
-	# Take direct control of the material: the scene's surface_material_override
-	# would otherwise mask whatever apply_to_mesh_3d() sets.
-	_mpv.texture_updated.connect(_on_mpv_texture_updated)
+	if content.has_method("bind"):
+		content.bind(runner)
 
 
-func _on_mpv_texture_updated(tex_arg = null) -> void:
-	if _mpv == null:
+func _init_video() -> void:
+	if not ClassDB.class_exists("GoZenVideo"):
+		_set_status("GoZenVideo class not found — is addons/gde_gozen loaded?")
 		return
-	var tex = tex_arg if tex_arg != null else _mpv.get_texture()
-	if tex == null:
-		return
-	if video_quad.material_override == null:
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		mat.albedo_texture = tex
-		video_quad.material_override = mat
-		# Drop the placeholder surface override so it can't win priority.
-		video_quad.set_surface_override_material(0, null)
-		_set_status("Video texture bound (%dx%d)" % [_mpv.get_width(), _mpv.get_height()])
-	else:
-		(video_quad.material_override as StandardMaterial3D).albedo_texture = tex
+	_video = VIDEO_BRIDGE_SCRIPT.new()
+	_video.name = "VideoBridge"
+	add_child(_video)
+	_video.set_target_mesh(video_quad)
+	_video.video_loaded.connect(_on_video_loaded)
 
 
 func _on_script_loaded(data: TimelineData) -> void:
 	_set_status("Loaded: %s" % data.meta.get("title", data.script_path.get_file()))
-	# The video screen is always addressable as "main_screen" so transform/
-	# shader_param tracks in the script can target it without having to spawn it.
-	# Marked external so live-reload reconciliation never despawns it.
+	# main_screen is always addressable; external so live-reload leaves it alone.
 	runner.registry().register("main_screen", video_quad, true)
-	_play_video_for(data)
+	_load_video_for(data)
 
 
-func _play_video_for(data: TimelineData) -> void:
-	if _mpv == null:
+func _load_video_for(data: TimelineData) -> void:
+	if _video == null:
 		return
 	var rel: String = data.media.get("video", "")
 	if rel == "":
@@ -146,11 +161,64 @@ func _play_video_for(data: TimelineData) -> void:
 	if not FileAccess.file_exists(resource_path):
 		_set_status("Video not found: %s" % resource_path)
 		return
-	# mpv expects an OS filesystem path, not a res:// URI.
 	var os_path := ProjectSettings.globalize_path(resource_path)
-	_mpv.load_file(os_path)
-	_mpv.play()
-	_set_status("Playing: %s" % resource_path.get_file())
+	_video.load_video(os_path)
+
+
+func _on_video_loaded(duration: float, framerate: float) -> void:
+	_set_status("Video loaded: %.2fs @ %.2f fps" % [duration, framerate])
+	runner.set_video_duration(duration)
+	if runner.playing:
+		_video.play()
+
+
+func _on_runner_seeked(t: float) -> void:
+	if _video != null:
+		_video.seek_seconds(t)
+
+
+func _on_runner_play_state_changed(is_playing: bool) -> void:
+	if _video == null:
+		return
+	if is_playing:
+		_video.play()
+	else:
+		_video.pause()
+
+
+func _on_event_fired(ev: Dictionary) -> void:
+	match String(ev.get("action", "")):
+		"vr_cut", "vr_teleport":
+			_apply_camera_cut(ev)
+
+
+func _apply_camera_cut(ev: Dictionary) -> void:
+	var to_dict = ev.get("to", {})
+	if typeof(to_dict) != TYPE_DICTIONARY:
+		return
+	var pos := Interpolation.to_vec3(to_dict.get("position", [0, 0, 0]))
+	var rot_arr = to_dict.get("rotation_deg", [0, 0, 0])
+	var rot := Interpolation.to_vec3(rot_arr) if typeof(rot_arr) == TYPE_ARRAY else Vector3.ZERO
+	var tr = ev.get("transition")
+	if typeof(tr) == TYPE_DICTIONARY and String(tr.get("type", "")) == "fade_to_black":
+		var dur := float(tr.get("duration", 0.5))
+		# In VR, fade the in-headset quad so the transition is visible in the
+		# headset; also fade the CanvasLayer overlay so the desktop mirror
+		# matches. Desktop-only: just the overlay.
+		if xr_mode.is_in_vr():
+			xr_rig.fade_through(dur, func(): _snap_camera(pos, rot))
+			fade_overlay.fade_through(dur, func(): pass)
+		else:
+			fade_overlay.fade_through(dur, func(): _snap_camera(pos, rot))
+	else:
+		_snap_camera(pos, rot)
+
+
+func _snap_camera(pos: Vector3, rot_deg: Vector3) -> void:
+	if xr_mode.is_in_vr():
+		xr_rig.set_view(pos, rot_deg)
+	else:
+		desktop_camera.set_view(pos, rot_deg)
 
 
 func _on_script_load_failed(err: String) -> void:

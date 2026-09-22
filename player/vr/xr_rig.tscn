@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://cvjxrrig00001"]
+
+[ext_resource type="Script" path="res://player/vr/xr_rig.gd" id="1_rig"]
+[ext_resource type="PackedScene" uid="uid://clujaf3u776a3" path="res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn" id="2_vp2d3d"]
+[ext_resource type="PackedScene" uid="uid://cvjwrist00001" path="res://player/vr/wrist_hud_content.tscn" id="3_wrist"]
+[ext_resource type="PackedScene" uid="uid://cqhw276realc" path="res://addons/godot-xr-tools/functions/function_pointer.tscn" id="4_pointer"]
+[ext_resource type="Script" path="res://player/vr/xr_movement.gd" id="5_move"]
+
+[sub_resource type="QuadMesh" id="QuadFade"]
+size = Vector2(4, 4)
+
+[sub_resource type="StandardMaterial3D" id="MatFade"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0, 0, 0, 0)
+disable_receive_shadows = true
+disable_ambient_light = true
+
+[node name="XRRig" type="XROrigin3D"]
+script = ExtResource("1_rig")
+
+[node name="XRCamera3D" type="XRCamera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+
+[node name="VRFade" type="MeshInstance3D" parent="XRCamera3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.4)
+visible = false
+cast_shadow = 0
+extra_cull_margin = 16.0
+mesh = SubResource("QuadFade")
+material_override = SubResource("MatFade")
+
+[node name="LeftController" type="XRController3D" parent="."]
+tracker = &"left_hand"
+pose = &"aim"
+
+[node name="WristHud" parent="LeftController" instance=ExtResource("2_vp2d3d")]
+transform = Transform3D(0.866025, 0, 0.5, 0, 1, 0, -0.5, 0, 0.866025, 0.04, 0.02, -0.08)
+visible = false
+screen_size = Vector2(0.22, 0.16)
+viewport_size = Vector2(660, 480)
+scene = ExtResource("3_wrist")
+unshaded = true
+
+[node name="RightController" type="XRController3D" parent="."]
+tracker = &"right_hand"
+pose = &"aim"
+
+[node name="FunctionPointer" parent="RightController" instance=ExtResource("4_pointer")]
+
+[node name="Movement" type="Node" parent="."]
+script = ExtResource("5_move")

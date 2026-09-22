@@ -146,6 +146,40 @@ static func test_seek_resets_event_cursor(tc: TestCase) -> void:
 	stage.queue_free()
 
 
+static func test_effective_duration_declared_wins_when_longer(tc: TestCase) -> void:
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var data := _timeline_from({"media": {"video": "x.mp4", "duration": 60.0}})
+	runner.load_timeline(data)
+	runner.set_video_duration(30.0)
+	tc.assert_eq(runner.effective_duration(), 60.0)
+	stage.queue_free()
+
+
+static func test_effective_duration_video_wins_when_longer(tc: TestCase) -> void:
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var data := _timeline_from({"media": {"video": "x.mp4", "duration": 30.0}})
+	runner.load_timeline(data)
+	runner.set_video_duration(120.0)
+	tc.assert_eq(runner.effective_duration(), 120.0)
+	stage.queue_free()
+
+
+static func test_effective_duration_video_when_undeclared(tc: TestCase) -> void:
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	# Script has no media.duration — timeline.duration() returns 0.
+	var data := _timeline_from({"media": {"video": "x.mp4"}})
+	runner.load_timeline(data)
+	runner.set_video_duration(45.5)
+	tc.assert_eq(runner.effective_duration(), 45.5)
+	stage.queue_free()
+
+
 static func test_shader_param_track_applied(tc: TestCase) -> void:
 	var pair := _make_runner_with_stage()
 	var runner: ScriptRunner = pair[0]

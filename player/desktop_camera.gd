@@ -30,6 +30,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		rotation = Vector3(_pitch, _yaw, 0.0)
 
 
+## Snap the camera to a new pose (used by vr_cut / vr_teleport events).
+## Only yaw (rot_deg.y) and pitch (rot_deg.x) are honored — the desktop
+## camera doesn't roll.
+func set_view(pos: Vector3, rot_deg: Vector3) -> void:
+	global_position = pos
+	_yaw = deg_to_rad(rot_deg.y)
+	_pitch = clampf(deg_to_rad(rot_deg.x), -PI * 0.49, PI * 0.49)
+	rotation = Vector3(_pitch, _yaw, 0.0)
+
+
 func _process(delta: float) -> void:
 	if not current:
 		return

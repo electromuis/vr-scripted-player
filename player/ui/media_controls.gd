@@ -31,6 +31,11 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if runner == null or runner.timeline == null:
 		return
+	# Effective duration can change after script_loaded if the video reports
+	# its length. Keep the scrub range in sync.
+	var eff := runner.effective_duration()
+	if abs(scrub.max_value - eff) > 0.01 and eff > 0.0:
+		scrub.max_value = maxf(eff, 0.1)
 	if not _scrubbing:
 		scrub.set_value_no_signal(runner.playhead)
 	_refresh_labels()
@@ -74,7 +79,7 @@ func _refresh_labels() -> void:
 	if runner == null or runner.timeline == null:
 		time_label.text = "--:-- / --:--"
 		return
-	time_label.text = "%s / %s" % [_format_time(runner.playhead), _format_time(runner.timeline.duration())]
+	time_label.text = "%s / %s" % [_format_time(runner.playhead), _format_time(runner.effective_duration())]
 
 
 static func _format_time(t: float) -> String:

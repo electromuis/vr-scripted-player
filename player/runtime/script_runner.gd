@@ -15,6 +15,8 @@ signal script_loaded(data: TimelineData)
 signal script_load_failed(error: String)
 signal script_reloaded(data: TimelineData)
 signal event_fired(event: Dictionary)
+signal seeked(t: float)
+signal play_state_changed(is_playing: bool)
 
 @export var stage_path: NodePath
 @export var autostart: bool = false
@@ -30,6 +32,7 @@ var _stage: Node3D
 var _events_sorted: Array = []
 var _next_event_idx: int = 0
 var _watcher: FileWatcher
+var _video_duration: float = 0.0  # set externally when the video reports its length
 
 
 func _ready() -> void:
@@ -50,6 +53,24 @@ func registry() -> ObjectRegistry:
 	return _registry
 
 
+func set_video_duration(seconds: float) -> void:
+	# Called by the video bridge when the underlying file has loaded and its
+	# length is known. Extends the effective timeline so playhead / scrub don't
+	# stop early if the script omitted an explicit media.duration.
+	_video_duration = maxf(0.0, seconds)
+
+
+func effective_duration() -> float:
+	# Timeline runs for the longer of the JSON-declared duration and the
+	# video's actual length. Authors get to override upward (declaring a
+	# longer piece than the video for overlays), and downward is respected
+	# too — but only if declared above zero.
+	var declared := timeline.duration() if timeline != null else 0.0
+	if declared > 0.0:
+		return maxf(declared, _video_duration)
+	return _video_duration
+
+
 func load_script(path: String) -> bool:
 	var result := ScriptFormat.load_from_file(path)
 	if not result.ok:
@@ -68,11 +89,15 @@ func load_timeline(data: TimelineData) -> void:
 
 
 func play() -> void:
-	playing = true
+	if not playing:
+		playing = true
+		play_state_changed.emit(true)
 
 
 func pause() -> void:
-	playing = false
+	if playing:
+		playing = false
+		play_state_changed.emit(false)
 
 
 func seek(t: float) -> void:
@@ -85,6 +110,7 @@ func seek(t: float) -> void:
 	# their interpolated value even if we're paused.
 	_reproject_owned_objects()
 	_evaluate_continuous_tracks()
+	seeked.emit(playhead)
 
 
 func _reproject_owned_objects() -> void:
@@ -213,7 +239,7 @@ func _on_file_changed(path: String) -> void:
 # ---------- runtime evaluation ----------
 
 func _duration() -> float:
-	return timeline.duration() if timeline != null else 0.0
+	return effective_duration()
 
 
 func _fire_pending_events() -> void:
@@ -232,7 +258,7 @@ func _dispatch_event(ev: Dictionary) -> void:
 		"spawn": _do_spawn(ev)
 		"despawn": _do_despawn(ev)
 		"vr_cut", "vr_teleport":
-			pass  # Handled by an XR-rig controller in Phase 4.
+			pass  # Camera application lives in main.gd via event_fired.
 
 
 func _do_spawn(ev: Dictionary) -> void:

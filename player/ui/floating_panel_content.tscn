@@ -1,0 +1,76 @@
+[gd_scene load_steps=2 format=3 uid="uid://cvjfpanel00001"]
+
+[sub_resource type="StyleBoxFlat" id="Bg"]
+bg_color = Color(0.08, 0.08, 0.11, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.35, 0.55, 0.9, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="Root" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("Bg")
+
+[node name="Tabs" type="TabContainer" parent="."]
+layout_mode = 2
+tab_alignment = 1
+
+[node name="Camera" type="MarginContainer" parent="Tabs"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Placeholder" type="Label" parent="Tabs/Camera"]
+layout_mode = 2
+text = "Camera settings will go here (virtual screen size / distance / curvature)."
+autowrap_mode = 3
+
+[node name="Files" type="MarginContainer" parent="Tabs"]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Placeholder" type="Label" parent="Tabs/Files"]
+layout_mode = 2
+text = "Script folder picker will go here."
+autowrap_mode = 3
+
+[node name="Config" type="MarginContainer" parent="Tabs"]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Placeholder" type="Label" parent="Tabs/Config"]
+layout_mode = 2
+text = "General configuration (persisted to user://settings.cfg) will go here."
+autowrap_mode = 3
+
+[node name="Presets" type="MarginContainer" parent="Tabs"]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Placeholder" type="Label" parent="Tabs/Presets"]
+layout_mode = 2
+text = "Named viewpoint / screen presets will go here."
+autowrap_mode = 3

@@ -98,6 +98,23 @@ static func test_event_spawn_requires_id_and_prefab(tc: TestCase) -> void:
 	tc.assert_err(r, "spawn")
 
 
+static func test_event_vr_cut_requires_to(tc: TestCase) -> void:
+	var s := '{"format_version":1,"media":{"video":"x.mp4"},"tracks":[{"type":"event","t":1.0,"action":"vr_cut"}]}'
+	var r := ScriptFormat.load_from_string(s)
+	tc.assert_err(r, "to")
+
+
+static func test_event_vr_cut_valid(tc: TestCase) -> void:
+	var s := """
+	{ "format_version":1, "media":{"video":"x.mp4"},
+	  "tracks":[{"type":"event","t":10.0,"action":"vr_cut",
+		"to":{"position":[0,1.6,-5],"rotation_deg":[0,180,0]},
+		"transition":{"type":"fade_to_black","duration":0.5}}]}
+	"""
+	var r := ScriptFormat.load_from_string(s)
+	tc.assert_ok(r)
+
+
 static func test_duplicate_object_ids(tc: TestCase) -> void:
 	var s := """
 	{ "format_version":1, "media":{"video":"x.mp4"},

@@ -6,8 +6,7 @@
     "created": "2026-09-22"
   },
   "media": {
-    "video": "../minimal/video.mp4",
-    "duration": 60.0
+    "video": "../minimal/video.mp4"
   },
   "prefabs": {
     "cube": "prefabs/cube.tscn"

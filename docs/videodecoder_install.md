@@ -1,59 +1,80 @@
-# Video decoding: `godot_mpv` (libmpv wrapper)
+# Video decoding: `gde_gozen` (FFmpeg wrapper)
 
-The player uses **[godot_mpv](https://github.com/) — a libmpv GDExtension** for video decoding. mpv gives us hardware-accelerated decode (D3D11VA on Windows), universal codec support (H.264, H.265, AV1, VP9, ProRes, ...), frame-accurate seeking, and 4K/60 headroom on any GPU built in the last ~5 years.
-
-Status: **alpha wrapper.** Enough for Phase 0/1 smoke testing; may hit edges around threading, seek precision, or texture lifetimes as the project matures.
+The player uses **[gde_gozen](https://codeberg.org/gozen/gde_gozen)** — an actively-maintained Godot GDExtension wrapping FFmpeg. It's the video engine behind the GoZen video editor, so **frame-accurate seek is a first-class feature**. This replaces the earlier `godot_mpv` alpha (which had no seek API).
 
 ## What ships
 
-Under `bin/`:
+Under `addons/gde_gozen/`:
+- `gozen.gdextension` — extension config (patched locally: release path points at the debug binary since only debug ships in the alpha).
+- `bin/libgozen.windows.template_debug.x86_64.dll` — the wrapper + bundled FFmpeg.
+- `video_playback.gd` — a `Control` node wrapping the underlying `GoZenVideo` GDExtension class.
+- `yuv_to_rgb_forward.gdshader` + `yuv_to_rgb_compatibility.gdshader` — YUV → RGB shaders.
 
-- `godot_mpv.gdextension` — extension config
-- `libgodot_mpv.windows.template_release.x86_64.dll` — the wrapper
-- `libmpv-2.dll` — libmpv itself
-- `libEGL.dll`, `libGLESv2.dll` — ANGLE (mpv renders through OpenGL ES on Windows)
-- `zlib1.dll` — dependency
+## Godot version requirement
 
-## Public API (as of alpha)
-
-Class: `MPVPlayer` (extends `Node`)
+**The shipped alpha binary is built for Godot 4.4.1+.** If you're on Godot 4.4.0 (`4.4-stable` at first release), the extension fails to load with:
 
 ```
-initialize() -> bool
-load_file(path: String) -> void        # OS filesystem path, not res://
-play() -> void
-pause() -> void
-stop() -> void
-get_texture() -> Texture               # the live video texture
-get_width() -> int
-get_height() -> int
-apply_to_mesh_3d(mesh: MeshInstance3D) -> void   # binds the video texture as albedo
-apply_to_viewport(viewport: Viewport) -> void    # for 2D use
-create_video_mesh_2d() -> Object
-create_video_mesh_3d() -> Object
-signal texture_updated
+Cannot load a GDExtension built for Godot 4.4.1 using an older version of Godot (4.4.0).
 ```
+
+Fix: upgrade Godot to 4.4.1 or newer. Download from https://godotengine.org/download/archive/. Replace the binary at `C:\ProgramData\chocolatey\lib\godot\tools\` or install fresh.
+
+## Public API surface (VideoPlayback)
+
+Class: `VideoPlayback` (extends `Control`). Declared via `class_name` — usable via `preload/load`.
+
+```
+# Setup
+set_video_path(path: String)          # async load; emits video_loaded when ready
+enable_audio: bool                    # default true
+enable_auto_play: bool                # default false
+loop: bool
+
+# Playback
+play()
+pause()
+close()
+is_playing: bool
+playback_speed: float                 # 0.25 .. 4
+current_frame: int
+
+# Seek + query
+seek_frame(nr: int)                   # frame-accurate seek
+get_video_frame_count() -> int
+get_video_framerate() -> float
+get_video_length_float() -> float     # duration in seconds
+get_current_playback_position_float() -> float
+get_video_rotation() -> int
+is_video_alpha() -> bool
+is_open() -> bool
+
+# Signals
+video_loaded, video_ended
+playback_started, playback_paused, playback_ready
+frame_changed(frame_nr), next_frame_called(frame_nr)
+```
+
+The visible output lives on an internal `TextureRect` whose material is a `ShaderMaterial` with the YUV→RGB shader. Plane textures (y/u/v/a) are `ImageTexture`s updated via `RenderingServer.texture_2d_update` each frame.
 
 ## How it's wired
 
-In `player/main.gd`:
+`player/video_bridge.gd` (class `VideoBridge`) owns a hidden `VideoPlayback` and hijacks its `_shader_material` onto the 3D `VideoQuad`'s `material_override`. This skips the extra SubViewport render pass that a naïve setup would incur — a real win at 4K.
 
-1. `_init_mpv()` instantiates `MPVPlayer` via `ClassDB.instantiate("MPVPlayer")`, calls `initialize()`, and binds it to `$Stage/VideoQuad` via `apply_to_mesh_3d()`.
-2. When `ScriptRunner` fires `script_loaded`, `_play_video_for(data)` resolves the script's `media.video` relative path, converts `res://` → OS path with `ProjectSettings.globalize_path()`, and calls `load_file()` + `play()`.
+`player/main.gd`:
+1. Instantiates `VideoBridge`, hands it the `VideoQuad`.
+2. On `ScriptRunner.script_loaded`, resolves `media.video`'s relative path, `globalize_path()`s it, and calls `bridge.load_video(os_path)`.
+3. On `ScriptRunner.seeked(t)` — fired by the scrub bar — forwards to `bridge.seek_seconds(t)` which maps seconds to frame via the video's own fps.
+4. On `ScriptRunner.play_state_changed(is_playing)` — forwards to `bridge.play()` / `bridge.pause()`.
 
-## Fallback: Theora `.ogv` via built-in `VideoStreamPlayer`
+If the addon fails to load (e.g. Godot version mismatch), `VideoBridge` degrades gracefully — no video, but the rest of the app still runs.
 
-If the mpv wrapper breaks or you need to work without it, transcode source to Theora:
+## Hardware acceleration
 
-```
-ffmpeg -i input.mp4 -c:v libtheora -q:v 7 -c:a libvorbis video.ogv
-```
+Not called out explicitly in gozen's README. If 4K/60 drops frames on your GPU, that's the likely cause. FFmpeg supports `-hwaccel d3d11va` etc.; whether the shipped alpha exposes it is a benchmark question — profile with a 4K clip in `examples/minimal/` and check `Task Manager → GPU → Video Decode` vs. CPU.
 
-Then swap in a stock `VideoStreamPlayer` node (built into Godot 4). Limited to ~1080p/30 practically — not viable for 4K/60.
+If HW decode isn't on: options are (a) upstream a PR to enable, (b) rebuild from source (the source tree is in `gde_gozen/` at project root — SConstruct + build.py), or (c) stay software-only for now.
 
-## Known alpha caveats to watch for
+## Fallback
 
-- `godot_mpv.gdextension` originally referenced a `template_debug` DLL that isn't shipped; the file is patched to point both debug and release at the release binary. Revisit if a debug build lands upstream.
-- Only Windows x86_64 release binary is present. Linux/Mac builds need to be added if we target those.
-- **No public seek API.** The introspected surface exposes `load_file / play / pause / stop` and nothing for `seek` / `time-pos`. Timeline scrubbing works for the *script stage* (transforms, spawned objects, shader params — reprojected deterministically by `ScriptRunner.seek()`), but the video plays linearly and does **not** jump to the scrubbed time. Workarounds for later: (a) upstream a seek method; (b) `stop() → load_file(path)` on scrub as a coarse resync (drops frames, may glitch audio); (c) send a raw mpv command via a wrapper extension.
-- Texture-format edge cases and thread-safety around `apply_to_mesh_3d` in VR are unverified — smoke-test each before relying on them.
+Godot's built-in `VideoStreamPlayer` still handles Theora `.ogv` — swap in for a smoke test if gozen is broken. Not viable for 4K/60.
