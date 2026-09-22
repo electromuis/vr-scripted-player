@@ -1,0 +1,17 @@
+{
+  "format_version": 1,
+  "meta": {
+    "title": "Minimal Smoke Test",
+    "author": "scaffold",
+    "created": "2026-09-22"
+  },
+  "media": {
+    "video": "video.mp4",
+    "audio": null,
+    "duration": 30.0
+  },
+  "prefabs": {},
+  "shaders": {},
+  "objects": [],
+  "tracks": []
+}
