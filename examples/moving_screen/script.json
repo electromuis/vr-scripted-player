@@ -1,0 +1,54 @@
+{
+  "format_version": 1,
+  "meta": {
+    "title": "Phase 2 demo: moving screen + spawned cube",
+    "author": "scaffold",
+    "created": "2026-09-22"
+  },
+  "media": {
+    "video": "../minimal/video.mp4",
+    "duration": 60.0
+  },
+  "prefabs": {
+    "cube": "prefabs/cube.tscn"
+  },
+  "shaders": {},
+  "objects": [],
+  "tracks": [
+    {
+      "type": "transform",
+      "target": "main_screen",
+      "channel": "position",
+      "keyframes": [
+        { "t": 0.0,  "value": [0, 2, 0], "interp": "cubic" },
+        { "t": 6.0,  "value": [3, 3, 0], "interp": "cubic" },
+        { "t": 12.0, "value": [-3, 1.5, 0], "interp": "cubic" },
+        { "t": 18.0, "value": [0, 2, 0], "interp": "linear" }
+      ]
+    },
+    {
+      "type": "transform",
+      "target": "main_screen",
+      "channel": "rotation_deg",
+      "keyframes": [
+        { "t": 0.0,  "value": [0, 0, 0] },
+        { "t": 18.0, "value": [0, 20, 0] }
+      ]
+    },
+    {
+      "type": "event",
+      "t": 3.0,
+      "action": "spawn",
+      "id": "cube_1",
+      "prefab": "cube",
+      "transform": { "position": [-2, 1, 0], "rotation_deg": [0, 0, 0], "scale": [1, 1, 1] }
+    },
+    {
+      "type": "event",
+      "t": 15.0,
+      "action": "despawn",
+      "target": "cube_1",
+      "transition": { "type": "fade", "duration": 2.0 }
+    }
+  ]
+}

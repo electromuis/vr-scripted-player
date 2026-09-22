@@ -55,4 +55,5 @@ Then swap in a stock `VideoStreamPlayer` node (built into Godot 4). Limited to ~
 
 - `godot_mpv.gdextension` originally referenced a `template_debug` DLL that isn't shipped; the file is patched to point both debug and release at the release binary. Revisit if a debug build lands upstream.
 - Only Windows x86_64 release binary is present. Linux/Mac builds need to be added if we target those.
-- Seek precision, texture-format edge cases, and thread-safety around `apply_to_mesh_3d` in VR are unverified — smoke-test each before relying on them.
+- **No public seek API.** The introspected surface exposes `load_file / play / pause / stop` and nothing for `seek` / `time-pos`. Timeline scrubbing works for the *script stage* (transforms, spawned objects, shader params — reprojected deterministically by `ScriptRunner.seek()`), but the video plays linearly and does **not** jump to the scrubbed time. Workarounds for later: (a) upstream a seek method; (b) `stop() → load_file(path)` on scrub as a coarse resync (drops frames, may glitch audio); (c) send a raw mpv command via a wrapper extension.
+- Texture-format edge cases and thread-safety around `apply_to_mesh_3d` in VR are unverified — smoke-test each before relying on them.

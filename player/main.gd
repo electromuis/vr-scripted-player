@@ -1,6 +1,7 @@
 extends Node3D
 
-const DEFAULT_SCRIPT := "res://examples/minimal/script.json"
+const DEFAULT_SCRIPT := "res://examples/moving_screen/script.json"
+const MEDIA_CONTROLS_SCENE := preload("res://player/ui/media_controls.tscn")
 
 @onready var runner: ScriptRunner = $ScriptRunner
 @onready var status_label: Label = $UI/TopBar/StatusLabel
@@ -28,6 +29,7 @@ func _ready() -> void:
 
 	vr_button.pressed.connect(_on_vr_button)
 	_update_mode_label()
+	_init_media_controls()
 
 	_init_mpv()
 
@@ -85,6 +87,12 @@ func _update_mode_label() -> void:
 	mode_label.text = "VR" if xr_mode.is_in_vr() else "Desktop (WASD + right-click look, F12 to toggle VR)"
 
 
+func _init_media_controls() -> void:
+	var mc := MEDIA_CONTROLS_SCENE.instantiate()
+	$UI.add_child(mc)
+	mc.bind(runner)
+
+
 func _init_mpv() -> void:
 	if not ClassDB.class_exists("MPVPlayer"):
 		_set_status("MPVPlayer class not found — is bin/godot_mpv.gdextension loaded?")
@@ -121,6 +129,10 @@ func _on_mpv_texture_updated(tex_arg = null) -> void:
 
 func _on_script_loaded(data: TimelineData) -> void:
 	_set_status("Loaded: %s" % data.meta.get("title", data.script_path.get_file()))
+	# The video screen is always addressable as "main_screen" so transform/
+	# shader_param tracks in the script can target it without having to spawn it.
+	# Marked external so live-reload reconciliation never despawns it.
+	runner.registry().register("main_screen", video_quad, true)
 	_play_video_for(data)
 
 

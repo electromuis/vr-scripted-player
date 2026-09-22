@@ -361,21 +361,33 @@ Each phase produces something runnable. Order matters: script format before runt
 - **16 tests passing** covering: valid parsing, missing/wrong `format_version`, missing media/video, bad JSON, unknown track types, transform track validation (channel + vector length), keyframe ordering, event action requirements, duplicate object ids, timeline helpers, path resolution, and the real `examples/minimal/script.json`.
 - Deliverable: `Godot --headless --script res://tests/run.gd` runs the suite; can load `examples/minimal/script.json` into `TimelineData`.
 
-### Phase 2 — Runtime interpreter (5–7 days)
+### Phase 2 — Runtime interpreter ✅ DONE
 
-- `script_runner.gd` — advances playhead, evaluates continuous tracks, fires discrete events. No VR yet.
-- `object_registry.gd` — spawn/despawn with a simple fade transition.
-- `prefab_library.gd` — cache.
-- Interpolation utilities (linear, cubic bezier keyframes).
-- `video_surface` prefab: a `MeshInstance3D` with a shader material sampling the video's `ViewportTexture`, exposing UV offset/scale as shader params.
-- Deliverable: `examples/minimal/` plays end-to-end in flat mode. Keyframed transforms move the screen; spawn/despawn works.
+- `interpolation.gd` — evaluates a keyframe array at time `t`. Modes: linear (default), cubic (smoothstep), step. Scalars and equal-length numeric arrays (used for Vector3 as `[x,y,z]`). Clamps to endpoint values before first / after last keyframe. `to_vec3()` helper.
+- `object_registry.gd` — spawn/despawn with alpha-fade transitions. `spawn()` instantiates a `PackedScene` under the stage, registers by id, applies initial transform. `despawn(id, fade_duration)` either instantly frees or animates alpha to 0 over the duration before freeing. `tick_fades(delta)` from the runner drives the interpolation.
+- `prefab_library.gd` — caches `ResourceLoader.load(abs_path)` results.
+- `script_runner.gd` — owns TimelineData + playhead. Each `tick(delta)`: advances playhead, fires all discrete events whose `t` was crossed since the last tick, evaluates every continuous track and applies to the registered node. Handles `transform` (position/rotation_deg/scale) and `shader_param` (via `ShaderMaterial.set_shader_parameter`). `seek(t)` re-anchors the event cursor for replay. Public `tick()` is decoupled from `_process` so tests can drive it deterministically.
+- Main scene registers `VideoQuad` as the `"main_screen"` id in the registry on script load — so transform/shader_param tracks can target the video screen without spawning it.
+- `examples/moving_screen/` demonstrates the pipeline end-to-end: a `cube.tscn` prefab is spawned at `t=3`, despawned with a 2s fade at `t=15`, and the video screen loops through a cubic-eased position path.
+- **28 tests passing**: 7 interpolation, 16 format, 5 runner (transform, rotation, event firing, seek rewind, shader_param).
+- Video-surface **prefab** with UV-sub-rect shader is deferred to Phase 9 (worked example) — for now the fixed `VideoQuad` in main.tscn handles the single-screen case, and the format is expressive enough to add spawnable video surfaces later without a schema change.
+- Deliverable: `examples/moving_screen/script.json` plays end-to-end. Keyframed transforms move the screen; spawn/despawn works with fade.
 
-### Phase 3 — Live reload (2–3 days)
+### Phase 3 — Live reload ✅ DONE
 
-- `file_watcher.gd` — mtime polling on a `Timer`.
-- Reconciliation logic in `script_runner.gd`: re-parse, diff stage, apply, preserve playhead.
-- Shader-only fast path.
-- Deliverable: editing `script.json` in an external editor changes the running player without a restart, playhead preserved.
+- `file_watcher.gd` — polls mtimes on a 0.5s Timer; emits `file_changed(path)` per watched file.
+- ScriptRunner watches the script file plus every referenced prefab and shader on each load / reload.
+- On `script.json` change: full re-parse. If parse fails (e.g. editor is mid-write), the current timeline is kept and the next mtime bump retries — no clobber. On success: reconcile.
+- Reconciliation model:
+  - Project the expected owned-object set at the current playhead from the *new* timeline (walk sorted events, tracking spawn/despawn deltas).
+  - Diff against currently-owned objects in the registry.
+  - Despawn what's no longer expected; spawn what's newly expected.
+  - Objects in both — untouched. Their continuous tracks (transform / shader_param) will apply on the next tick.
+  - **External objects (main_screen)** — marked via `register(id, node, external=true)`. Never touched by reconciliation or `_apply_timeline`'s owned-clear pass. This is what keeps the fixed VideoQuad alive across script edits.
+  - Playhead is preserved; event cursor is re-anchored.
+- Prefab or shader file change: cache invalidation only. Running instances keep their current material; next spawn will pick up the new prefab. Full shader hot-swap on existing instances is deferred until it's actually needed (Phase 7+).
+- **35 tests passing** (added 7 reconciliation tests: state-projection at various times, event-cursor index calc, reconcile despawns disappeared objects, reconcile + `_apply_timeline` both preserve externals).
+- Deliverable: editing `script.json` in an external editor changes the running player without a restart, playhead preserved, main_screen intact. Mid-write parse failures are tolerated silently.
 
 ### Phase 4 — Desktop UI + VR + HUD (7–9 days)
 
@@ -383,10 +395,11 @@ Split into two sub-phases because desktop mode and VR mode share a settings mode
 
 **4a — Desktop UI (2–3 days)**
 
-- Top bar overlay: mode label, current time, "Enter VR" button (already scaffolded in Phase 0).
-- Settings panel toggled with `Tab`: virtual-screen size/distance/curvature sliders, script reload, file picker via `FileDialog`, persisted to `user://settings.cfg`.
-- Play/pause/scrub bar bound to `ScriptRunner`.
-- `vr_cut` / `vr_teleport` / `fade_to_black` event handlers that also work in desktop mode (fade is a 2D overlay; cut/teleport moves the desktop camera).
+- Top bar overlay: mode label, current time, "Enter VR" button (already scaffolded in Phase 0). ✅
+- **Media controls bottom bar: play/pause + scrub + time readout.** ✅ Scrubbing is deterministic — `ScriptRunner.seek(t)` reprojects the owned-object set (same model as live reload) and evaluates continuous tracks so the stage snaps to what should exist at `t`, even paused.
+  - **Video seek** is a known gap in the mpv wrapper alpha (no seek API surfaced). Timeline scrub reprojects the *script stage* correctly but the video keeps playing linearly — see `docs/videodecoder_install.md` → "Known alpha caveats".
+- Settings panel toggled with `Tab`: virtual-screen size/distance/curvature sliders, script reload, file picker via `FileDialog`, persisted to `user://settings.cfg`. ⏳
+- `vr_cut` / `vr_teleport` / `fade_to_black` event handlers that also work in desktop mode (fade is a 2D overlay; cut/teleport moves the desktop camera). ⏳
 
 **4b — VR runtime + HUD (5–6 days)**
 

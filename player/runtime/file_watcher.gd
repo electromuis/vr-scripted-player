@@ -31,6 +31,10 @@ func watched_paths() -> Array:
 	return _mtimes.keys()
 
 
+func reset() -> void:
+	_mtimes.clear()
+
+
 func _poll() -> void:
 	for path in _mtimes.keys():
 		if not FileAccess.file_exists(path):
