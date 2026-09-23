@@ -1,0 +1,165 @@
+{
+  "format_version": 1,
+  "meta": {
+    "title": "Phase 2 demo: moving screen + spawned cube",
+    "author": "scaffold",
+    "created": "2026-09-22"
+  },
+  "media": {
+    "video": "../minimal/video.mp4"
+  },
+  "prefabs": {
+    "screen": "res://player/prefabs/screen.tscn",
+    "cube": "res://player/prefabs/cube.tscn"
+  },
+  "shaders": {
+    "glow": "res://player/screen_glow.gdshader"
+  },
+  "objects": [],
+  "tracks": [
+    {
+      "type": "event",
+      "t": 0.0,
+      "action": "spawn",
+      "id": "main_screen",
+      "prefab": "screen",
+      "transform": {
+        "position": [
+          0.0,
+          2.0,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.300000011920929,
+          0.300000011920929,
+          0.300000011920929
+        ]
+      },
+      "config": {
+        "shader": "glow",
+        "shader_params": {
+          "video_uv_bounds": [
+            0.25,
+            0.25,
+            0.75,
+            0.75
+          ],
+          "glow_intensity": 1.6,
+          "glow_radius": 0.32,
+          "glow_power": 2.0,
+          "glow_tint": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "edge_blur": 0.12,
+          "glow_samples": 12,
+          "inner_glow_strength": 0.55,
+          "inner_glow_width": 0.09
+        },
+        "render_scale": 0.5
+      }
+    },
+    {
+      "type": "transform",
+      "target": "main_screen",
+      "channel": "position",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "value": [
+            0.0,
+            2.0,
+            0.0
+          ],
+          "interp": "cubic"
+        },
+        {
+          "t": 6.0,
+          "value": [
+            3.0,
+            3.0,
+            0.0
+          ],
+          "interp": "cubic"
+        },
+        {
+          "t": 12.0,
+          "value": [
+            -3.0,
+            1.5,
+            0.0
+          ],
+          "interp": "cubic"
+        },
+        {
+          "t": 18.0,
+          "value": [
+            0.0,
+            2.0,
+            0.0
+          ],
+          "interp": "cubic"
+        }
+      ]
+    },
+    {
+      "type": "transform",
+      "target": "main_screen",
+      "channel": "rotation_deg",
+      "keyframes": [
+        {
+          "t": 0.0,
+          "value": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "t": 18.0,
+          "value": [
+            0.0,
+            20.0000079559223,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "t": 3.0,
+      "action": "spawn",
+      "id": "cube_1",
+      "prefab": "cube",
+      "transform": {
+        "position": [
+          -2.0,
+          1.0,
+          0.0
+        ],
+        "rotation_deg": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "type": "event",
+      "t": 15.0,
+      "action": "despawn",
+      "target": "cube_1"
+    }
+  ]
+}

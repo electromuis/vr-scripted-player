@@ -21,3 +21,11 @@ See [Scripted VJ Video Player — Project Plan.md](./Scripted%20VJ%20Video%20Pla
 - Godot 4.4 stable (Windows binary at `C:\ProgramData\chocolatey\lib\godot\tools\Godot_v4.4-stable_win64.exe` in this dev environment)
 - For MP4 playback: [`godot-videodecoder`](https://github.com/EIREXE/godot-videodecoder) addon — see [`docs/videodecoder_install.md`](./docs/videodecoder_install.md)
 - For VR: SteamVR or another OpenXR runtime
+
+## Installing godot-xr-tools
+
+`godot-xr-tools` is not tracked in this repo (release binaries required). Install it manually before opening the project:
+
+1. Download the latest release from https://github.com/GodotVR/godot-xr-tools/releases
+2. Extract the `addons/godot-xr-tools/` folder into `project_engine/addons/godot-xr-tools/`
+3. Open the project in Godot — the addon should be picked up automatically
