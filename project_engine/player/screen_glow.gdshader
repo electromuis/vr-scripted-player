@@ -6,6 +6,11 @@ uniform sampler2D screen_tex : source_color, filter_linear;
 
 uniform vec4 video_uv_bounds = vec4(0.25, 0.25, 0.75, 0.75);
 
+// Sub-rect of the source video shown on this screen (UV space). Split
+// screens use thirds: offset (0,0)/(1/3,0)/(2/3,0), scale (1/3,1).
+uniform vec2 uv_offset = vec2(0.0);
+uniform vec2 uv_scale = vec2(1.0);
+
 uniform float glow_intensity : hint_range(0.0, 4.0) = 1.6;
 uniform float glow_radius : hint_range(0.01, 1.0) = 0.32;
 uniform float glow_power : hint_range(0.5, 6.0) = 2.0;
@@ -42,7 +47,7 @@ void fragment() {
 	float dist = length(outside);
 	float inside = 1.0 - step(0.00001, dist);
 
-	vec3 video = texture(screen_tex, vuv).rgb;
+	vec3 video = texture(screen_tex, uv_offset + vuv * uv_scale).rgb;
 
 	vec2 inner = min(
 		uv - vmin,
@@ -87,7 +92,7 @@ void fragment() {
 			vec2(1.0)
 		);
 
-		glow += texture(screen_tex, sample_uv).rgb;
+		glow += texture(screen_tex, uv_offset + sample_uv * uv_scale).rgb;
 	}
 
 	glow /= float(glow_samples);
@@ -98,7 +103,9 @@ void fragment() {
 	vec3 outside_color = glow * glow_tint * glow_intensity;
 
 	vec3 final_rgb = mix(outside_color, inside_color, inside);
-	float final_a = mix(falloff, 1.0, inside);
+	// Halo coverage fades with intensity, so a screen at 0 has no dark rim
+	// (lets adjacent split screens sit edge-to-edge).
+	float final_a = mix(falloff * clamp(glow_intensity, 0.0, 1.0), 1.0, inside);
 
 	COLOR = vec4(final_rgb, final_a);
 }

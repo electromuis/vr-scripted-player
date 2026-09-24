@@ -18,10 +18,22 @@ script = ExtResource("1_ctrl")
 [node name="Row" type="HBoxContainer" parent="."]
 theme_override_constants/separation = 12
 
+[node name="PrevButton" type="Button" parent="Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(48, 0)
+tooltip_text = "Previous video in the folder"
+text = "⏮"
+
 [node name="PlayButton" type="Button" parent="Row"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(48, 0)
 text = "▶"
+
+[node name="NextButton" type="Button" parent="Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(48, 0)
+tooltip_text = "Next video in the folder"
+text = "⏭"
 
 [node name="Scrub" type="HSlider" parent="Row"]
 unique_name_in_owner = true

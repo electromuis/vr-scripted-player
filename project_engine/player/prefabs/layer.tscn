@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://player/visualizer/visualizer.gd" id="1_visualizer"]
+
+[node name="Layer" type="Node3D"]
+script = ExtResource("1_visualizer")
+at_origin = true

@@ -4,11 +4,15 @@
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(32, 18)
+subdivide_width = 48
+subdivide_depth = 27
 
 [node name="Screen" type="Node3D"]
 script = ExtResource("1_screen")
 
 [node name="Mesh" type="MeshInstance3D" parent="."]
+custom_aabb = AABB(-16, -9, 0, 32, 18, 0)
+extra_cull_margin = 20.0
 mesh = SubResource("QuadMesh_screen")
 
 [node name="RenderViewport" type="SubViewport" parent="."]

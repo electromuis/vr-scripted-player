@@ -7,6 +7,9 @@ extends Camera3D
 @export var move_speed: float = 5.0
 @export var boost_multiplier: float = 3.0
 @export var mouse_sensitivity: float = 0.003
+## False in the media player's locked mode: mouse-look still works, but
+## WASD / space / ctrl don't move the viewer.
+@export var movement_enabled: bool = true
 
 var _yaw: float = 0.0
 var _pitch: float = 0.0
@@ -41,7 +44,7 @@ func set_view(pos: Vector3, rot_deg: Vector3) -> void:
 
 
 func _process(delta: float) -> void:
-	if not current:
+	if not current or not movement_enabled:
 		return
 	var input := Vector3.ZERO
 	input.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")

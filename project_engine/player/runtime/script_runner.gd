@@ -17,14 +17,28 @@ signal script_reloaded(data: TimelineData)
 signal event_fired(event: Dictionary)
 signal seeked(t: float)
 signal play_state_changed(is_playing: bool)
+## The playhead reached the end of the timeline while ticking. Once per
+## arrival: a seek (or loading another timeline) re-arms it.
+signal reached_end
+
+const Modifiers := preload("res://player/runtime/modifiers.gd")
 
 @export var stage_path: NodePath
 @export var autostart: bool = false
 @export var live_reload: bool = true
+## Give timelines without their own `main_screen` the player's default
+## screen (see DefaultScreen). Off by default so tests see raw timelines.
+@export var inject_default_screen: bool = false
 
 var timeline: TimelineData
 var playhead: float = 0.0
 var playing: bool = false
+## Stops the clock without leaving play: main.gd sets it while the video is
+## opening or seeking so the timeline doesn't run ahead of the picture.
+var hold: bool = false
+## The music's bass level (0..1) for `pulse` (see Modifiers); main.gd feeds
+## it from the audio analyzer while wants_audio().
+var audio_bass: float = 0.0
 
 var _registry: ObjectRegistry
 var _prefabs: PrefabLibrary
@@ -33,6 +47,16 @@ var _events_sorted: Array = []
 var _next_event_idx: int = 0
 var _watcher: FileWatcher
 var _video_duration: float = 0.0  # set externally when the video reports its length
+var _ended: bool = false  # reached_end already fired for this arrival at the end
+## id -> the spawn event each owned object came from, so a seek or reload
+## respawns objects whose event changed (new config, parent, ...).
+var _spawned_from: Dictionary = {}
+## id -> reactive state (see Modifiers): node, spin, pulse, spin_kfs, plus
+## the transform bookkeeping Modifiers keeps in it.
+var _reactive: Dictionary = {}
+## A node's own modifier values live in this metadata (runtime only).
+const _MODS_META := "_vj_mods"
+var _mods_lookup := func(n: Node) -> Dictionary: return n.get_meta(_MODS_META, {})
 
 
 func _ready() -> void:
@@ -104,26 +128,42 @@ func seek(t: float) -> void:
 	if timeline == null:
 		return
 	playhead = clampf(t, 0.0, _duration())
+	_ended = false  # seeking onto the end while playing counts as reaching it
 	_next_event_idx = _event_idx_after(playhead, _events_sorted)
 	# Determinism: rebuild the owned-object set to match what should exist at
 	# this playhead. Continuous tracks (transform / shader_param) then snap to
 	# their interpolated value even if we're paused.
 	_reproject_owned_objects()
+	_reactive_begin()
 	_evaluate_continuous_tracks()
+	_reactive_end()
 	seeked.emit(playhead)
 
 
 func _reproject_owned_objects() -> void:
 	if timeline == null:
 		return
-	var expected := _project_state_at(_events_sorted, playhead)
+	_sync_owned(_project_state_at(_events_sorted, playhead))
+
+
+## Make the owned objects match `expected` (id -> spawn event): despawn the
+## ones not expected or spawned from a different event, then spawn what's
+## missing, parents before their children.
+func _sync_owned(expected: Dictionary) -> void:
 	for id in _registry.owned_ids():
-		if not expected.has(id):
+		if not expected.has(id) or (_spawned_from.has(id) and _spawned_from[id] != expected[id]):
 			_registry.despawn(id, 0.0)
 	for id in expected.keys():
-		if _registry.has_id(id):
-			continue
-		_do_spawn(expected[id])
+		_spawn_expected(id, expected, 0)
+
+
+func _spawn_expected(id: String, expected: Dictionary, depth: int) -> void:
+	if _registry.has_id(id) or depth > expected.size():
+		return
+	var parent := String(expected[id].get("parent", ""))
+	if parent != "" and expected.has(parent):
+		_spawn_expected(parent, expected, depth + 1)
+	_do_spawn(expected[id])
 
 
 func tick(delta: float) -> void:
@@ -131,12 +171,18 @@ func tick(delta: float) -> void:
 		return
 	playhead = clampf(playhead + delta, 0.0, _duration())
 	_fire_pending_events()
+	_reactive_begin()
 	_evaluate_continuous_tracks()
+	_reactive_end()
 	_registry.tick_fades(delta)
+	# Duration is 0 until the video reports its length: not an end yet.
+	if not _ended and _duration() > 0.0 and playhead >= _duration():
+		_ended = true
+		reached_end.emit()
 
 
 func _process(delta: float) -> void:
-	if not playing:
+	if not playing or hold:
 		return
 	tick(delta)
 
@@ -144,6 +190,8 @@ func _process(delta: float) -> void:
 # ---------- timeline load / reconcile ----------
 
 func _apply_timeline(data: TimelineData, preserve_playhead: bool) -> void:
+	if inject_default_screen:
+		DefaultScreen.inject(data)
 	timeline = data
 	_events_sorted = data.events_sorted()
 	if preserve_playhead:
@@ -151,7 +199,11 @@ func _apply_timeline(data: TimelineData, preserve_playhead: bool) -> void:
 	else:
 		playhead = 0.0
 		_next_event_idx = 0
+		_video_duration = 0.0  # the new video reports its own once loaded
+		_ended = false
 		_registry.clear_owned()
+		_spawned_from.clear()
+		_reactive.clear()
 	_update_watched_files()
 	script_loaded.emit(timeline)
 
@@ -160,27 +212,22 @@ func _reconcile_swap(new_timeline: TimelineData) -> void:
 	# Compute expected owned objects at the current playhead from the new
 	# timeline, then diff against currently-owned. Spawn/despawn deltas only.
 	# External objects (main_screen, etc.) are never touched.
+	if inject_default_screen:
+		DefaultScreen.inject(new_timeline)
 	var new_events := new_timeline.events_sorted()
 	var expected := _project_state_at(new_events, playhead)
 	var old_timeline := timeline
 	timeline = new_timeline
 	_events_sorted = new_events
 	_next_event_idx = _event_idx_after(playhead, _events_sorted)
-
-	for id in _registry.owned_ids():
-		if not expected.has(id):
-			_registry.despawn(id, 0.0)
-	for id in expected.keys():
-		if _registry.has_id(id):
-			continue
-		_do_spawn(expected[id])
-
+	_sync_owned(expected)
 	_update_watched_files()
 	script_reloaded.emit(timeline)
 
 
 static func _project_state_at(sorted_events: Array, t: float) -> Dictionary:
 	# Returns id -> the spawn event that created it, considering events with t <= playhead.
+	# Despawning (or respawning) an object takes its children with it.
 	var state: Dictionary = {}
 	for ev in sorted_events:
 		if float(ev.get("t", 0.0)) > t:
@@ -189,10 +236,21 @@ static func _project_state_at(sorted_events: Array, t: float) -> Dictionary:
 			"spawn":
 				var id := String(ev.get("id", ""))
 				if id != "":
+					if state.has(id):
+						_drop_children(state, id)  # a respawn starts it empty
 					state[id] = ev
 			"despawn":
-				state.erase(String(ev.get("target", "")))
+				var target := String(ev.get("target", ""))
+				_drop_children(state, target)
+				state.erase(target)
 	return state
+
+
+static func _drop_children(state: Dictionary, id: String) -> void:
+	for child in state.keys():
+		if state.has(child) and String(state[child].get("parent", "")) == id:
+			_drop_children(state, child)
+			state.erase(child)
 
 
 static func _event_idx_after(t: float, sorted_events: Array) -> int:
@@ -206,7 +264,7 @@ func _update_watched_files() -> void:
 	if _watcher == null or timeline == null:
 		return
 	_watcher.reset()
-	if timeline.script_path != "" and timeline.script_path != "<memory>":
+	if timeline.script_path != "" and timeline.script_path != "<memory>" and not timeline.synthetic:
 		_watcher.watch(timeline.script_path)
 	for key in timeline.shaders.keys():
 		var p := timeline.resolve_shader(key)
@@ -222,18 +280,27 @@ func _on_file_changed(path: String) -> void:
 	if timeline == null:
 		return
 	if path == timeline.script_path:
-		# Full re-parse + reconcile. If parse fails (e.g. editor is mid-write),
-		# keep current state — the next mtime bump will retry.
-		var r := ScriptFormat.load_from_file(path)
-		if not r.ok:
-			push_warning("Live-reload parse failed (keeping current): %s" % r.error)
-			return
-		_reconcile_swap(r.data)
+		# If parse fails (e.g. editor is mid-write), the next mtime bump retries.
+		reload()
 		return
 	# Prefab or shader changed. Invalidate the cache; running instances keep
 	# their (now-stale) material until they're respawned. That's an acceptable
 	# tradeoff for a Phase-3 MVP.
 	_prefabs.invalidate(path)
+
+
+## Re-parse the script file now and reconcile, keeping the playhead (what a
+## file change does). If it doesn't parse, the current timeline stays and
+## this returns false.
+func reload() -> bool:
+	if timeline == null or timeline.synthetic or timeline.script_path in ["", "<memory>"]:
+		return false
+	var r := ScriptFormat.load_from_file(timeline.script_path)
+	if not r.ok:
+		push_warning("Live-reload parse failed (keeping current): %s" % r.error)
+		return false
+	_reconcile_swap(r.data)
+	return true
 
 
 # ---------- runtime evaluation ----------
@@ -272,18 +339,133 @@ func _do_spawn(ev: Dictionary) -> void:
 	if abs_path.is_empty():
 		push_warning("spawn: unknown prefab key '%s'" % prefab_key)
 		return
+	var parent := _stage
+	var parent_id := String(ev.get("parent", ""))
+	if parent_id != "":
+		parent = _registry.get_node_by_id(parent_id)
+		if parent == null or not is_instance_valid(parent):
+			push_warning("spawn '%s': parent '%s' isn't there" % [id, parent_id])
+			return
 	var packed := _prefabs.load_prefab(abs_path)
 	if packed == null:
 		return
 	var xform := _read_transform(ev.get("transform", {}))
-	var node := _registry.spawn(id, packed, _stage, xform)
+	var node := _registry.spawn(id, packed, parent, xform)
+	if node == null:
+		return
+	_spawned_from[id] = ev
 	var cfg = ev.get("config", null)
-	if node != null and typeof(cfg) == TYPE_DICTIONARY and node.has_method("configure"):
+	if typeof(cfg) == TYPE_DICTIONARY and node.has_method("configure"):
+		# A layer loads its own shader (it may be Shadertoy code); a screen
+		# gets a material built here.
+		var is_layer := node is Visualizer
 		var shader_key = cfg.get("shader", "")
 		var mat: ShaderMaterial = null
-		if typeof(shader_key) == TYPE_STRING and shader_key != "":
+		if not is_layer and typeof(shader_key) == TYPE_STRING and shader_key != "":
 			mat = _build_shader_material(String(shader_key), cfg.get("shader_params", {}))
-		node.configure(cfg, mat)
+		node.configure(_resolve_config(cfg, is_layer), mat)
+	_setup_modifiers(id, node, cfg if typeof(cfg) == TYPE_DICTIONARY else {})
+
+
+## The spawn config's `modifiers` and `reactive` blocks. Modifiers are
+## refreshed for every new object, so it takes on its parents' too.
+func _setup_modifiers(id: String, node: Node3D, cfg: Dictionary) -> void:
+	_reactive.erase(id)
+	var mods = cfg.get("modifiers")
+	if typeof(mods) == TYPE_DICTIONARY and not mods.is_empty():
+		var values := {}
+		for k in mods:
+			values[k] = Modifiers.normalize(k, mods[k])
+		node.set_meta(_MODS_META, values)
+	Modifiers.refresh(node, _mods_lookup)
+	var reactive = cfg.get("reactive")
+	var spin_kfs: Array = []
+	var pulse_track := false
+	for track in timeline.continuous_tracks():
+		if track.get("type") == "shader_param" and track.get("target") == id + ".reactive":
+			if track.get("param") == "spin":
+				spin_kfs = track.get("keyframes", [])
+			elif track.get("param") == "pulse":
+				pulse_track = true
+	if typeof(reactive) != TYPE_DICTIONARY and spin_kfs.is_empty() and not pulse_track:
+		return
+	if typeof(reactive) != TYPE_DICTIONARY:
+		reactive = {}
+	_reactive[id] = {
+		"node": node,
+		"spin": Modifiers.normalize("spin", reactive.get("spin", [0, 0, 0])),
+		"pulse": float(reactive.get("pulse", 0.0)),
+		"spin_kfs": spin_kfs,
+		"uses_audio": pulse_track or float(reactive.get("pulse", 0.0)) > 0.0,
+	}
+
+
+## Whether any object pulses with the music (main.gd runs the analyzer).
+func wants_audio() -> bool:
+	for state in _reactive.values():
+		if state.uses_audio:
+			return true
+	return false
+
+
+func _reactive_begin() -> void:
+	for id in _reactive.keys():
+		var state: Dictionary = _reactive[id]
+		if not is_instance_valid(state.node) or not _registry.has_id(id):
+			_reactive.erase(id)
+			continue
+		Modifiers.begin_frame(state.node, state)
+
+
+func _reactive_end() -> void:
+	for state in _reactive.values():
+		var spin_at := func(t: float) -> Vector3:
+			if state.spin_kfs.is_empty():
+				return state.spin
+			return Interpolation.to_vec3(Interpolation.evaluate(state.spin_kfs, t))
+		var angle := Modifiers.spin_angle(state, spin_at, playhead)
+		Modifiers.end_frame(state.node, state, angle, 1.0 + float(state.pulse) * audio_bass)
+
+
+## `cfg` with shader keys swapped for the files they name (what Screen /
+## Visualizer.set_effects and Visualizer.set_shader take), and JSON arrays
+## in effect params turned into vectors.
+func _resolve_config(cfg: Dictionary, is_layer: bool) -> Dictionary:
+	var out := cfg.duplicate(true)
+	if is_layer:
+		out["shader"] = _shader_path(String(cfg.get("shader", "")))
+		var params = cfg.get("params", {})
+		if typeof(params) == TYPE_DICTIONARY:
+			out["params"] = _shader_values(params)
+	var effects = cfg.get("effects")
+	if typeof(effects) == TYPE_ARRAY:
+		var list: Array = []
+		for e in effects:
+			if typeof(e) != TYPE_DICTIONARY:
+				continue
+			var params = e.get("params", {})
+			list.append({
+				"shader": _shader_path(String(e.get("shader", ""))),
+				"params": _shader_values(params) if typeof(params) == TYPE_DICTIONARY else {},
+			})
+		out["effects"] = list
+	return out
+
+
+func _shader_path(key: String) -> String:
+	if key == "":
+		return ""
+	var path := timeline.resolve_shader(key)
+	if path == "":
+		push_warning("shader key '%s' not found" % key)
+	return path
+
+
+static func _shader_values(params: Dictionary) -> Dictionary:
+	var out := {}
+	for k in params:
+		out[k] = shader_value(params[k])
+	return out
 
 
 func _build_shader_material(shader_key: String, params) -> ShaderMaterial:
@@ -298,8 +480,21 @@ func _build_shader_material(shader_key: String, params) -> ShaderMaterial:
 	mat.shader = shader
 	if typeof(params) == TYPE_DICTIONARY:
 		for k in params.keys():
-			mat.set_shader_parameter(String(k), params[k])
+			mat.set_shader_parameter(String(k), shader_value(params[k]))
 	return mat
+
+
+## JSON has no vector type: numeric arrays of length 2/3/4 become
+## Vector2/3/4 (a plain Array doesn't convert to a vecN uniform — it would
+## silently read as zero). Everything else passes through.
+static func shader_value(v: Variant) -> Variant:
+	if typeof(v) != TYPE_ARRAY:
+		return v
+	match v.size():
+		2: return Vector2(float(v[0]), float(v[1]))
+		3: return Vector3(float(v[0]), float(v[1]), float(v[2]))
+		4: return Vector4(float(v[0]), float(v[1]), float(v[2]), float(v[3]))
+	return v
 
 
 func _do_despawn(ev: Dictionary) -> void:
@@ -354,10 +549,25 @@ func _apply_shader_param_track(track: Dictionary) -> void:
 	if value == null:
 		return
 	var param: String = String(track.get("param", ""))
-	# Prefer a get_shader_material() hook (e.g. Screen, which wraps its
-	# artist shader in a SubViewport and thus doesn't expose it via
-	# get_active_material on the 3D quad). Fall back to GeometryInstance3D's
-	# active material for regular prefabs.
+	value = shader_value(value)
+	if parts[1] == "modifiers":
+		var mods: Dictionary = node.get_meta(_MODS_META, {}).duplicate()
+		value = Modifiers.normalize(param, value)
+		if mods.get(param) != value:
+			mods[param] = value
+			node.set_meta(_MODS_META, mods)
+			Modifiers.refresh(node, _mods_lookup)
+		return
+	if parts[1] == "reactive":
+		if _reactive.has(parts[0]) and param == "pulse":
+			_reactive[parts[0]].pulse = float(value)
+		return  # spin is integrated from its keyframes in _reactive_end
+	# Prefabs with several materials (e.g. Screen: artist shader + display
+	# pass) route by slot name. Otherwise prefer a get_shader_material()
+	# hook, then fall back to GeometryInstance3D's active material.
+	if node.has_method("set_material_param"):
+		node.call("set_material_param", parts[1], param, value)
+		return
 	var mat: ShaderMaterial = null
 	if node.has_method("get_shader_material"):
 		mat = node.call("get_shader_material")

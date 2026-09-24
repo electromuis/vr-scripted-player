@@ -1,10 +1,15 @@
 extends PanelContainer
 
-## Bottom-bar media controls for desktop mode: play/pause, scrub bar, time
-## readout. Poll runner state each frame; only push seek() when the user
+## Bottom-bar media controls for desktop mode: previous/play/next, scrub
+## bar, time readout. Previous/next just ask main.gd, which owns the playlist. Poll runner state each frame; only push seek() when the user
 ## interacts with the slider (drag_started/drag_ended prevents feedback loops).
 
+signal previous_requested
+signal next_requested
+
+@onready var prev_button: Button = %PrevButton
 @onready var play_button: Button = %PlayButton
+@onready var next_button: Button = %NextButton
 @onready var scrub: HSlider = %Scrub
 @onready var time_label: Label = %TimeLabel
 
@@ -22,6 +27,8 @@ func bind(r: ScriptRunner) -> void:
 
 func _ready() -> void:
 	play_button.pressed.connect(_on_play_pressed)
+	prev_button.pressed.connect(previous_requested.emit)
+	next_button.pressed.connect(next_requested.emit)
 	scrub.drag_started.connect(func(): _scrubbing = true)
 	scrub.drag_ended.connect(_on_scrub_drag_ended)
 	scrub.value_changed.connect(_on_scrub_value_changed)

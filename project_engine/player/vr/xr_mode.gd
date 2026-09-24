@@ -1,8 +1,9 @@
 class_name XRMode
 extends Node
 
-## Handles opt-in OpenXR initialization. Desktop is the default; VR is entered
-## by CLI (--vr) or user action ("Enter VR" button / bound key).
+## Handles OpenXR initialization. Desktop works standalone; VR is entered
+## automatically at startup when a headset is detected, by CLI (--vr), or by
+## user action ("Enter VR" button / bound key). --desktop skips the auto-entry.
 
 signal entered_vr
 signal exited_vr
@@ -14,6 +15,14 @@ var _in_vr: bool = false
 
 func is_in_vr() -> bool:
 	return _in_vr
+
+
+## True when a headset is ready to use. With xr/openxr/enabled on, Godot
+## initializes OpenXR at boot and only succeeds if the runtime found an HMD,
+## so this is a side-effect-free check — it never starts a runtime itself.
+func headset_detected() -> bool:
+	var xr := XRServer.find_interface("OpenXR")
+	return xr != null and xr.is_initialized()
 
 
 func try_enter_vr() -> bool:
@@ -48,8 +57,7 @@ func try_enter_vr() -> bool:
 func exit_vr() -> void:
 	if not _in_vr:
 		return
-	var vp := get_viewport()
-	vp.use_xr = false
+	_leave_xr_viewport()
 	if _xr_interface != null and _xr_interface.is_initialized():
 		_xr_interface.uninitialize()
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
@@ -63,8 +71,19 @@ func _on_session_stopping() -> void:
 	# down and a second uninit can crash on some drivers.
 	if not _in_vr:
 		return
-	var vp := get_viewport()
-	vp.use_xr = false
+	_leave_xr_viewport()
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
 	_in_vr = false
 	exited_vr.emit()
+
+
+## Hand the main viewport back to the desktop window. While use_xr is on the
+## viewport is sized to the headset's render target (e.g. 2496x2688), and
+## turning it off doesn't size it back — the desktop view stays stretched
+## and mouse coordinates no longer match what's drawn. Re-assigning the
+## window size makes Godot recompute the viewport from the window.
+func _leave_xr_viewport() -> void:
+	var vp := get_viewport()
+	vp.use_xr = false
+	var win := get_window()
+	win.size = win.size

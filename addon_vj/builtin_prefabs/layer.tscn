@@ -1,0 +1,27 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://addons/vj_editor/builtin_prefabs/layer.gd" id="1_layer"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_layer"]
+size = Vector2(32, 18)
+subdivide_width = 48
+subdivide_depth = 27
+
+[node name="Layer" type="Node3D"]
+script = ExtResource("1_layer")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+extra_cull_margin = 16.0
+mesh = SubResource("QuadMesh_layer")
+
+[node name="RenderViewport" type="SubViewport" parent="."]
+size = Vector2i(960, 540)
+render_target_update_mode = 3
+transparent_bg = true
+disable_3d = true
+
+[node name="Canvas" type="ColorRect" parent="RenderViewport"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0)

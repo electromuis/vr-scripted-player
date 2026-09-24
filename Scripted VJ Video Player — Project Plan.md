@@ -19,6 +19,59 @@ Three decisions the earlier draft deferred, resolved here so the build can proce
 2. **Plugin ↔ player live sync: WebSocket, from day one of the plugin.** The intermediate "file-watch only" step was going to be thrown away as soon as scrub-sync was wanted. Skip it. The player already needs a file watcher for `.json`/shader hot-reload; adding a WebSocket client alongside is small. The plugin runs a `WebSocketServer`; the player connects when it loads a script. Bidirectional messages: `seek`, `reload`, `play/pause`, `report_position`.
 3. **Desktop mode is a first-class runtime, not a fallback.** Whirligig and VRChat both start on desktop and let the user opt into VR. This player does the same. Godot 4 requires `xr/openxr/enabled=true` in `project.godot` for the OpenXR loader config (action map, form factor) to be registered — without it, runtime `initialize()` returns false and the whole opt-in flow fails. We set `enabled=true` and `startup_alert=false`, so the OpenXR runtime is *touched* at boot (near-free if SteamVR is already running; a suppressed stderr warning if not), but the app never renders to XR until we set `viewport.use_xr = true` from `XRMode.try_enter_vr()`. Trigger paths: "Enter VR" button in the top bar, `F1` keybind, or `--vr` CLI flag. Consequences: (a) no headset required to launch, browse scripts, or preview; (b) full feature parity between desktop and VR playback — script authoring/preview must be possible entirely desktop; (c) a parallel 2D overlay UI mirrors the world-space HUD's controls for desktop; (d) desktop camera has WASD + right-click mouse-look, matching the affordances people expect from Whirligig/VRChat.
 
+## Current Status (2026-09-23)
+
+The phase write-ups further down record how each piece was built; some of their details have since changed. This section is the up-to-date picture. 74 tests pass (`--headless --script res://tests/run.gd` in `project_engine/`).
+
+### What works today
+
+- **Player (`project_engine/`)** — plays a timeline script, or a bare video file on the default screen (a same-name `.json` next to a video is used as its script). Hot-reloads scripts, prefabs and shaders. A Windows export preset writes `build/VRmviewer.exe`.
+  - **Video**: `gde_gozen` (FFmpeg), frame-accurate seek; local files and http(s) URLs.
+  - **Projections**: flat, flat SBS/TB, 180° SBS/TB/mono, 360° mono/TB/SBS; auto-detected from the file name, overridable per video in the Camera tab.
+  - **Desktop controls**: WASD + right-click look; ←/→ seek, ↑/↓ volume, Space/K play-pause, R/Home reset view; F2 menu, F1 enter/exit VR. Bottom media bar with play/pause, scrub and time.
+  - **Menu (F2, or right controller menu button)**, a world-space panel used by both mouse and VR pointer:
+    - *Camera*: presets (Save/New, stored as `user://presets/preset_N.json`), projection, reset view, and six sliders: size (scales about the screen's centre), distance (inverted: right = nearer), height, tilt, curvature, opacity. Opacity fades the flat quad in the display pass; the 180°/360° sphere stays opaque. Curvature bends the main screen through the display shader's vertex pass; a flat preset doesn't override a script's own curvature. An *Adjust* dropdown switches the sliders between the screen and the shader plane (below); in Shader mode the projection dropdown becomes the shader picker, and a *Lock to screen* box centres the plane on `main_screen` every frame, at its own size, following sliders and script animation. While it's locked, distance, height and tilt are greyed out. Presets store both (`screen` and `visualizer` blocks).
+    - *Shader plane (visualizer)*: `player/visualizer/`. A second Screen prefab on its own mount, 1 cm in front of the main screen's default position, drawing a sound-reactive shader in its artist viewport at half of full HD. Its display pass has `luma_key` on: alpha is the brightest channel, so black is transparent and it composites like a screen blend. `AudioAnalyzer` adds a spectrum analyzer and a capture effect to gozen's audio bus (ahead of its pitch shift) and fills a Shadertoy-layout 512×2 texture every frame. Row 0 is 0–11 kHz, with the dB window shifted from Web Audio's by the measured 7.5 dB window-gain difference, and smoothing matches AnalyserNode. Row 1 is the waveform. It also computes band levels. The analysis divides the volume back out so visuals don't follow the volume slider, and it only runs while a shader is selected. `VisualizerShaders` lists built-ins plus `user://shaders/` and `<exe>/shaders/`. It wraps `.glsl`/`.frag`/`.txt` Shadertoy code between `shadertoy_prelude.gdshaderinc` (iChannel0–3, iResolution, iTime→TIME, …) and `shadertoy_main.gdshaderinc` (a `fragment()` that calls `mainImage` with a flipped Y), and loads `.gdshader` files as-is. Live analysis only: while paused or scrubbing, the shader sees silence. Not supported: multipass buffers, iMouse, texture channels.
+    - *Files*: inline browser for folders, scripts and videos, with OS thumbnails, list or tiles view. Picking a file opens it and closes the menu.
+    - *Network*: DLNA media-server browser (SSDP discovery, server-provided thumbnails). Picking a video plays it and closes the menu.
+    - *Config*: locomotion (locked, where the sticks seek and change volume / free, walk and snap-turn), skybox, floor on/off, volume.
+    - *Presets*: manage screen presets: click to apply, rename, overwrite with current values, new from current, delete (second press confirms; preset 1 can't be deleted), and choose which preset loads at startup (`user://presets/startup.cfg`). The Camera tab dropdown follows the same active preset. Preset 0, **Script (defaults)**, is built in and locked (no file, can't be saved over, renamed or deleted): software defaults, no effects, no layers. Loading a script switches to it so pieces look as authored, and the look from before (preset, unsaved tweaks, layers) comes back when a plain video loads. Sliders and other presets still work during a script, until the next load.
+  - **VR**: auto-entered at startup when a headset is detected, XR Tools rig with a laser pointer on the right controller, wrist HUD (play/pause, time, menu button, volume), in-headset fade, recenter, and the runtime's own recenter mapped to reset view. Right stick click = play/pause while aiming at the screen, reset view otherwise; holding the right grip drags the floating menu. The menu has a close (X) and a Quit button (press twice). The "VR working" commit (2026-09-22) shows the basics run on a headset; the individual Phase 4b checks aren't recorded as confirmed.
+  - **Whirligig-compatible timecode server** on `127.0.0.1:2000` so MultiFunPlayer / ScriptPlayer can sync (`--whirligig-port N`, `0` = off; `--whirligig-lan`).
+  - **CLI**: `--script <path>`, `--vr`, `--desktop` (skip auto-VR), `--start <seconds>`, `--paused` (open the script without playing), `--live-sync <port>`, `--whirligig-port`, `--whirligig-lan`, or a video/script path passed as a plain argument ("Open with").
+- **Authoring (`addon_vj/`, copied into the authoring projects as `addons/vj_editor/`)** — the plan's custom timeline dock (Phases 6–7) was **replaced** by authoring in a normal Godot scene: prefabs and screens are nodes, animation lives in an `AnimationPlayer`, and the scene exporter writes the script JSON (transform, `shader_param` and curvature tracks; `VJViewer` camera keys become `vr_cut` events; custom prefabs are bundled next to the JSON). **▶ Preview in player** exports and launches the player at the current scrub time, with live sync: scrubbing / playing the animation drives the player, pausing the player moves the Animation panel's playhead, and Preview or Ctrl+S re-exports and hot-reloads the connected player.
+- **Example pieces (`scripts/`)**: `minimal`, `moving_screen`, `forest_tunnel` (the worked example, authored in `project_script_forest_tunnel/`).
+
+### Open points
+
+**VR verification**
+- Walk through the Phase 4b checklist on a headset and record the results: wrist HUD buttons, menu button, pointer clicks in every menu tab, `vr_cut` + `fade_to_black`.
+- Comfort pass on `forest_tunnel`: the fades, and whether the columns' fly-by at 68–76 s is too close.
+- Pressing "Exit VR" during a fade or a cut isn't handled.
+- The controllers are invisible apart from the laser. Add hand models or simple markers.
+
+**Player**
+- Desktop hint text in `main.gd` says "F12 VR"; the key is F1.
+- With the menu open, releasing right-click may not end mouse-look, because the menu catches the release. Not re-checked since it was first noted.
+- Script load errors only show in the status line; there's no error dialog or loading spinner.
+- `--windowed` isn't implemented.
+- Cuts can only return the viewer to the home pose. A cut to somewhere else needs `ScreenMount` to follow the viewer.
+- The curvature slider affects only `main_screen`, not screens a script splits off.
+
+**Live sync**
+- Moving the Animation panel's playhead from the player relies on an unexposed editor control (the panel's time SpinBox, found by class); if a Godot update moves it, the scene still follows but the panel's cursor doesn't.
+- A seek that arrives while the player's video is still opening reports t=0 until the video has loaded, so the editor's playhead can blip to 0.
+- With two authoring editors open, the second listens on the next port; a player only follows the editor that launched it.
+
+**Authoring**
+- Confirm that scene + AnimationPlayer authoring replaces the custom timeline dock for good, then drop or rewrite Phases 6–7 and the "Editor Plugin" section.
+- Undecided from the worked example: an `env_swap` event that spawns/despawns a set at once, and documenting the 3-way screen split as a prefab convention.
+
+**Docs + release (Phase 10)**
+- No `docs/` folder yet: `script_format.md`, `authoring_guide.md`, `player_usage.md`. (`docs/videodecoder_install.md`, cited under Tech Stack, doesn't exist either.)
+- Package the addon as a zip and the player as a release build. Only a debug build of the `gde_gozen` library is in `build/` so far.
+- The Definition of Done names `examples/forest_to_tunnel/`; the example lives at `scripts/forest_tunnel/`.
+
 ## Architecture
 
 Three pieces, one shared format:
@@ -152,12 +205,31 @@ my-video-script/
 Two track kinds:
 
 - **Continuous tracks** — `transform`, `shader_param`. Interpolated every frame between keyframes.
-- **Discrete events** — `spawn`, `despawn`, `vr_cut`, `vr_teleport`. Fired at their exact time.
+- **Discrete events** — `spawn`, `despawn`, `vr_cut`, `vr_teleport`. Fired at their exact time. Seeking or a live reload rebuilds what exists at the playhead; an object whose spawn event changed (config, transform, parent) is respawned.
 
 Special references:
 
 - `$video` — the video texture (a `ViewportTexture` from the video's `SubViewport`).
-- `<object_id>.<material_slot>` — targets a named material on a spawned object (used by `shader_param` tracks).
+- `<object_id>.<material_slot>` — targets a named material on a spawned object (used by `shader_param` tracks). Prefabs with more than one material route by slot via `set_material_param(slot, param, value)`: the Screen prefab uses `surface` (or any other name) for the artist shader, `display` for its display pass (`curvature`, `vertical_curvature`, `opacity`) and `effect<N>` for its Nth effect (from 0); a layer uses `layer` for its shader and the same `display` / `effect<N>` slots. Otherwise the slot name is ignored and the prefab's shader material is used.
+- Shader param values that are numeric arrays of length 2/3/4 are passed to shaders as `Vector2/3/4` (a raw JSON array would read as zero in a `vecN` uniform).
+
+### Groups, effects and shader layers
+
+- **`parent`** (optional, on `spawn`): the id of an object that already exists. The new object is placed inside it, with `transform` in the parent's space, so moving, rotating or scaling the parent moves it too. Despawning (or respawning) the parent removes its children. At the same `t`, events run in file order, so list a parent's spawn before its children's. Ids stay unique across the whole script.
+- **Built-in prefabs** the player ships (map them in `prefabs` like `screen`): `res://player/prefabs/group.tscn` (an empty node for grouping) and `res://player/prefabs/layer.tscn` (a shader layer). Top-level screens, groups and layers live in the player's ScreenMount, so the viewer's screen size/distance preferences move them together.
+- **Effects** (screen and layer `config.effects`): `[{"shader": <shaders key>, "params": {...}}]`, run in order over the picture, the same effect shaders the Camera tab uses. The player's built-ins are `res://player/visualizer/effects/{key_black,oval_mask,edge_blur,padding}.gdshader`. An entry with `"shader": ""` is an empty slot (kept so `effect<N>` targets line up).
+- **Screen config** also takes `opacity` and `vertical_curvature`. Values a script sets win over the viewer's Camera tab settings for that screen (resolution is always the viewer's).
+- **Layer config**: `shader` (a `shaders` key naming a layer shader, e.g. `res://player/visualizer/shaders/{light_ring,spectrum_bars,video_blur}.gdshader` or a Shadertoy `.glsl`), `params` (its hinted uniforms), `effects`, `opacity`, `curvature`, `vertical_curvature`, `resolution` (multiplier on the shader's `@resolution`). The layer's quad sits at the object's transform, the same size as a screen's at the same scale, and it gets the live audio and, for `@iChannelN video` channels, the video.
+
+- **Modifiers** (any object, `config.modifiers`, tracks on `<id>.modifiers`): Godot-native properties set on everything under the object, combined down through groups: `opacity` (0–1, meshes' `transparency`), `tint` (`[r, g, b, a]`, multiply overlay), `flash` (`[r, g, b, a]`, alpha = strength, additive overlay), `speed` (`speed_scale` of particles and AnimationPlayers), `sort_offset` (`sorting_offset`, metres). The prefab needs nothing for them. Despawn fades (`"transition": {"type": "fade"}`) also use `transparency` now, so they work on any mesh, MultiMeshes included.
+- **Reactive motion** (any object, `config.reactive`, tracks on `<id>.reactive`): computed on top of the object's animated transform, never fed back into it. `spin` (`[x, y, z]` degrees per second, integrated over the timeline so seeking lands on the same angle) and `pulse` (0–1: scale 1 + pulse × the music's bass; the player runs its audio analyser while anything pulses).
+
+```json
+{ "type": "event", "t": 0, "action": "spawn", "id": "backdrop", "prefab": "layer", "parent": "main_screen",
+  "transform": { "position": [0, 0, -12], "scale": [3, 3, 3] },
+  "config": { "shader": "video_blur", "params": { "radius": 0.065 },
+              "effects": [ { "shader": "padding" }, { "shader": "oval_mask", "params": { "size": 0.44, "ratio": 1.7 } } ] } }
+```
 
 VR comfort primitives (`vr_cut`, `vr_teleport`, `fade_to_black`) are first-class events, not something authors have to hand-roll — this is deliberate given the motion-sickness risk in the worked example.
 
@@ -214,22 +286,24 @@ Shader-only reloads (`.gdshader` mtime changed) can skip the whole diff — just
 Runs on any Windows machine, no headset required.
 
 - **Camera**: free-flying `Camera3D` with WASD movement, right-click-held mouse-look, shift-to-boost. Space/Ctrl for up/down. Matches the affordances people expect from Whirligig and VRChat's desktop mode.
-- **UI**: 2D overlay (`CanvasLayer`) with a top bar showing mode ("Desktop"/"VR"), a play/pause/scrub bar (Phase 5), and an "Enter VR" button on the right. A settings panel toggled with `Tab` mirrors the VR floating panel's settings (virtual screen size/distance/curvature, script reload, file browser).
-- **File browser**: standard `FileDialog` for picking script folders on disk.
+- **UI**: 2D overlay (`CanvasLayer`) with a top bar showing mode ("Desktop"/"VR") and an "Enter VR" button, plus a bottom play/pause/scrub bar. Settings and file browsing use the same world-space floating panel as VR (F2), driven by the mouse — there is no separate 2D settings panel.
+- **File browser**: inline `ItemList` browser in the panel's Files tab (an embedded `FileDialog` froze input; see Phase 4a).
 - **Feature parity**: script authors and viewers can do everything except experience the piece in VR — authoring, previewing, scrubbing, and hot-reload all work desktop-only.
 
 ## VR Mode (opt-in)
 
-- **Entry**: user clicks "Enter VR" in the top bar, presses `F12`, or launches with `--vr` on the command line. If OpenXR init fails, the player stays in desktop mode and shows a status message — never a fatal alert dialog.
+- **Entry**: automatic at startup when a headset is detected (OpenXR initialized at boot; `--desktop` opts out), or the user clicks "Enter VR" in the top bar, presses `F1`, or launches with `--vr` on the command line. If OpenXR init fails, the player stays in desktop mode and shows a status message — never a fatal alert dialog.
 - **Runtime**: Godot's built-in OpenXR, initialized programmatically at runtime. Hardware-agnostic (Index, Vive, Quest via Link/Virtual Desktop, etc. all route through SteamVR or a native OpenXR runtime).
 - **Rig**: `XROrigin3D` with `XRCamera3D` and two `XRController3D` children. `vr_cut` / `vr_teleport` events move the XROrigin, not the camera.
 - **World-space HUD**:
   - **Wrist-attached panel** (left controller): play/pause, volume, current time. Always visible when the wrist is up.
-  - **Floating panel** (toggle on right controller menu button): file browser, virtual-screen settings, script reload button. Same *controls* as the desktop settings panel — different presentation.
+  - **Floating panel** (toggle on right controller menu button): the same panel desktop uses — Camera, Files, Network, Config tabs.
 - **Interaction**: right controller raycast + trigger. Use Godot XR Tools' `XRToolsPointer` scene rather than writing this from scratch.
-- **"FOV" is virtual screen size**: don't touch camera FOV (motion sickness). The user-facing control is the virtual screen's size, curvature, and distance — sliders in the floating panel, persisted per-user in `user://settings.cfg`.
+- **"FOV" is virtual screen size**: don't touch camera FOV (motion sickness). The user-facing control is the virtual screen's size, curvature, and distance — sliders in the floating panel's Camera tab, persisted as presets in `user://presets/`.
 
 ## Editor Plugin
+
+> **Superseded.** Authoring moved to scene + `AnimationPlayer` export (see Current Status). The dock design below was never built.
 
 Lives in `addons/vj_editor/`. Registered via `plugin.cfg` + `plugin.gd`.
 
@@ -285,6 +359,8 @@ Top-down `Control._draw()` canvas:
 5. Ctrl+S in Godot triggers plugin's save → writes `script.json` → sends `reload` → player re-reads and reconciles.
 
 ## Directory Layout
+
+> **Planned layout — the repo differs.** Actual top level: `project_engine/` (the player Godot project: `player/`, `tests/`, `addons/gde_gozen`, `addons/godot-xr-tools`), `addon_vj/` (authoring addon, copied into authoring projects as `addons/vj_editor/`), `project_script_example/` and `project_script_forest_tunnel/` (authoring projects), `scripts/` (exported pieces), `build/` (exported player). No `docs/` or `examples/` yet.
 
 ```
 c:\dev\VRmviewer\
@@ -399,28 +475,35 @@ Split into two sub-phases because desktop mode and VR mode share a settings mode
 - **Media controls bottom bar: play/pause + scrub + time readout.** ✅ Scrubbing is deterministic — `ScriptRunner.seek(t)` reprojects the owned-object set (same model as live reload), evaluates continuous tracks, emits a `seeked(t)` signal. `VideoBridge` (owns a hidden `gde_gozen` `VideoPlayback`) listens and calls `seek_frame(int(t * fps))` for frame-accurate video seek. Video and script stage stay in sync during scrub. `play_state_changed` signal likewise mirrors play/pause to the video.
 - **`vr_cut` / `vr_teleport` / `fade_to_black` event handlers** that also work in desktop mode. ✅ Runner emits `event_fired`; `main.gd` dispatches vr_cut/vr_teleport to `DesktopCamera.set_view(pos, rot_deg)` (which resyncs yaw/pitch so mouse-look picks up from the new pose). Optional `transition: {type:"fade_to_black", duration}` runs a full-screen `FadeOverlay` (`player/ui/fade_overlay.gd`) that fades to black over duration/2, applies the cut at peak-black, and fades back. VR-rig cut is deferred to 4b (XROrigin isn't in the tree yet); `_snap_camera` no-ops while `xr_mode.is_in_vr()`.
 - **Floating world-space panel infrastructure.** ✅ Vendored `addons/godot-xr-tools/` (v4.5.1) to leverage `XRToolsViewport2DIn3D` rather than hand-rolling a SubViewport-on-a-quad. `player/ui/floating_panel.tscn`+`.gd` wraps it: on `toggle_panel` (F2) the panel shows in front of the active camera at 1.2 m, facing the viewer; on toggle again it hides. Content is `player/ui/floating_panel_content.tscn` — a `TabContainer` with **Camera / Files / Config / Presets** tabs (currently placeholder labels; contents deferred). Desktop mouse input: `_process` raycasts from `DesktopCamera` through the mouse cursor, hits the panel's `StaticBody3D`, calls the XR Tools body's `global_to_viewport()` for UV coords, and pushes `InputEventMouseMotion` / `InputEventMouseButton` into the panel's `SubViewport` — so the `TabContainer` and any future widgets react to mouse hover + click as normal 2D controls. VR path: same panel accepts controller trigger clicks via `XRToolsFunctionPointer` once 4b lands, no changes to the Control tree needed.
-- Settings-panel *contents* — virtual-screen size/distance/curvature sliders, script reload, `FileDialog` picker, `user://settings.cfg` persistence — deferred; the panel + tabs are ready to receive them. ⏳
+- **Camera tab contents** ✅ — `player/ui/camera_tab.gd` + `player/ui/floating_panel_content.gd` fill the Camera tab with a preset dropdown, Save / New buttons, and sliders for size, distance, height, curvature (tilt was added later). Sliders write through a shared `ScreenSettings` (`player/settings/screen_settings.gd`) which drives a `Stage/ScreenMount` Node3D. `main.gd:_on_object_spawned` reparents the timeline-spawned `main_screen` into the mount with `keep_global_transform=false`, so the runner's transform tracks still write to the child's local space and the mount's size/position offsets layer on top with no drift. Curvature was later wired to the screen's display shader (vertex bend of the subdivided quad).
+- **Preset persistence** ✅ — `player/settings/preset_store.gd` reads/writes JSON files at `user://presets/preset_N.json`. Preset 1 is the auto-created default; each file mirrors the timeline script format's `format_version` convention with a `kind: "camera_preset"` discriminator and a nested `screen` block. The Camera tab's Save overwrites the selected preset; New allocates the next free index. `user://settings.cfg` is *not* used for camera state — presets replace it.
+- **Files tab: inline folder browser** ✅ — `player/ui/files_tab.gd` renders an `ItemList` filling the tab (`PathLabel` breadcrumb on top, `StatusLabel` on the bottom). First tried Godot's `FileDialog` with `gui_embed_subwindows = true` on the SubViewport, but `popup_centered()` on an embedded FileDialog freezes the root viewport (modal input grab misroutes when the popup lives inside a SubViewport with pushed input). Rewrote as a plain `ItemList` walker: row 0 is `..` for parent nav, then folders, then `*.json` scripts and video files, all alphabetized (later: OS thumbnails and a list/tiles toggle). A single click (`item_selected`) either navigates into the folder or hands the file path to `main.gd:open_file`, which also closes the panel. Other files are hidden — this is a media picker, not a general explorer. First-launch dir is the repo's `scripts/` folder (one level above `res://`). Load results surface via `script_loaded` / `script_load_failed` into the status label. `gui_embed_subwindows = true` is kept on the SubViewport for future non-modal popups (tooltips, confirm dialogs).
+- Config tab later filled in (locomotion, skybox, floor, volume) and a Network (DLNA) tab added; the Presets tab later became a preset manager (rename, delete, startup preset).
 
 **4b — VR runtime + HUD** ✅ SCAFFOLDED (needs headset verification)
 
 - Programmatic OpenXR init via `XRMode.try_enter_vr()` (already scaffolded in Phase 0). ✅ `session_stopping` now routed through `XRMode` so runtime-side session teardown (headset unplug, SteamVR quit) fires `exited_vr` and hands control back to desktop without a second `uninitialize()` call.
 - `xr_rig.tscn`: `XROrigin3D` + `XRCamera3D` + `LeftController` + `RightController`. ✅ Instantiated under `Main` and hidden until `entered_vr`. On enter: `desktop_camera.current = false`, rig visible, `xr_camera.current = true`; reverse on exit.
-- Wrist HUD ✅ — `XRToolsViewport2DIn3D` mounted at `LeftController/WristHud` (tilted `~45°` toward the palm, `0.18 m × 0.12 m` @ `540×360`). Hosts `player/vr/wrist_hud_content.tscn`: play/pause button + time label + volume slider (volume slider wired but currently a stub — `VideoBridge` has no volume setter yet). `main.gd:_bind_wrist_hud()` waits one frame (XRToolsViewport2DIn3D instantiates its scene during its own `_ready`), then calls `bind(runner)`.
+- Wrist HUD ✅ — `XRToolsViewport2DIn3D` mounted at `LeftController/WristHud` (tilted `~45°` toward the palm, `0.18 m × 0.12 m` @ `540×360`). Hosts `player/vr/wrist_hud_content.tscn`: play/pause button + time label + volume slider (volume now works through `VideoBridge.set_volume`). `main.gd:_bind_wrist_hud()` waits one frame (XRToolsViewport2DIn3D instantiates its scene during its own `_ready`), then calls `bind(runner)`.
 - Floating HUD toggle on right controller menu button ✅ — `XRRig` connects to `RightController.button_pressed`; on `menu_button` it emits `menu_button_pressed`, which `main.gd` bridges to `floating_panel.toggle`. The same `FloatingPanel` from 4a is reused: mouse forwarding stays wired for the desktop mirror; VR trigger clicks arrive through the `XRToolsFunctionPointer` → `XRToolsViewport2DIn3D` pointer-event pipeline, which the panel's static body already supports (no changes to the Control tree needed).
 - Right-controller raycast + trigger click ✅ — `addons/godot-xr-tools/functions/function_pointer.tscn` instanced under `RightController`. Its default collision mask (`21:pointable | 23:ui-objects`) matches `XRToolsViewport2DIn3D`'s `DEFAULT_LAYER`, so the pointer lights up on both the wrist HUD and the floating panel.
 - `_snap_camera` unstubbed ✅ — in VR it calls `XRRig.set_view(pos, rot_deg)` which moves the `XROrigin3D` (yaw only; pitch/roll deliberately dropped to avoid nausea). Desktop path unchanged.
 - In-headset fade primitive ✅ — `XRRig` owns a 4 m × 4 m unlit quad `0.4 m` in front of `XRCamera3D` with an alpha-blend `StandardMaterial3D` (material is duplicated per-rig so the alpha isn't shared between instances). `fade_through()` tweens alpha 0→1→0 and mirrors `FadeOverlay.fade_through`'s API. On `fade_to_black` transitions `main.gd` runs the rig fade in VR (with the desktop overlay fading in parallel so the mirror matches) and only the overlay in desktop mode.
-- **Not yet done**: (a) real headset smoke test — the current work compiles, boots headless, and passes the 41-test suite, but nothing has been verified through an actual OpenXR runtime; (b) the "Exit VR" button doesn't yet gracefully handle mid-fade or mid-cut states; (c) hand models — the pointer laser is visible but the controllers themselves are invisible. Add `XRToolsController` hand models or simple gizmos in a follow-up.
+- **Not yet done**: (a) a recorded headset pass over this checklist — basic VR runs ("VR working" commit, 2026-09-22) but the items above aren't individually confirmed; (b) the "Exit VR" button doesn't yet gracefully handle mid-fade or mid-cut states; (c) hand models — the pointer laser is visible but the controllers themselves are invisible. Add `XRToolsController` hand models or simple gizmos in a follow-up.
 - Deliverable: player runs on any machine (desktop mode). On a machine with a headset + OpenXR, clicking "Enter VR" switches to headset rendering with functional wrist controls; clicking "Exit VR" or unplugging the headset returns to desktop mode without crashing.
 
-### Phase 5 — Player polish + export (2–3 days)
+### Phase 5 — Player polish + export (2–3 days) 🚧 PARTLY DONE
+
+*Status: `--script` works (plus `--vr`, `--start`, plain "Open with" paths) and the Windows export preset builds `build/VRmviewer.exe`; drag-and-drop onto the window and the Files tab both open scripts. Still open: `--windowed`, a loading spinner / error dialog, a release build. `--live-sync` belongs to Phase 8.*
 
 - CLI args: `--script <path>`, `--live-sync <port>`, `--windowed`.
 - Loading spinner / error dialog for bad scripts.
 - Windows export preset with OpenXR enabled.
 - Deliverable: `.exe` viewers can double-click to run; drag a script folder onto it (or use file browser) to play.
 
-### Phase 6 — Editor plugin skeleton (3–4 days)
+### Phase 6 — Editor plugin skeleton (3–4 days) ↪ REPLACED
+
+*Status: replaced by scene-based authoring (`addon_vj/`): a normal Godot scene + `AnimationPlayer`, exported to the JSON format, with ▶ Preview in player. See Current Status. The original plan is kept below for reference.*
 
 - `plugin.cfg`, `plugin.gd`, dock registration.
 - Load/save `script.json` UI.
@@ -429,7 +512,9 @@ Split into two sub-phases because desktop mode and VR mode share a settings mode
 - Simple flat track list showing what exists in the file (no editing yet).
 - Deliverable: open a `script.json` in Godot editor, see its tracks, scrub the thumbnail.
 
-### Phase 7 — Track editors (5–7 days)
+### Phase 7 — Track editors (5–7 days) ↪ REPLACED
+
+*Status: Godot's own animation editor does this job; the exporter maps its tracks to `transform` / `shader_param` / events. Original plan kept below for reference.*
 
 - Registration system for track-editor types.
 - `transform_track.gd`: keyframe lane, drag-to-move, keyframe inspector with a curve-easing dropdown.
@@ -438,17 +523,30 @@ Split into two sub-phases because desktop mode and VR mode share a settings mode
 - Schematic 2D preview canvas.
 - Deliverable: author the `examples/minimal/` script entirely inside the plugin.
 
-### Phase 8 — Live sync (2–3 days)
+### Phase 8 — Live sync (2–3 days) ✅ DONE
+
+*Status: `addon_vj/live_sync/live_sync.gd` (server, in the editor) and `player/live_sync/ws_client.gd` (`LiveSyncClient`) speak JSON over WebSocket on 127.0.0.1: `open` / `seek` / `play` / `pause` with a `seq`, answered by `state {script, t, playing, ack}`. The editor follows the player's playhead only from states that ack its latest command, so mid-scrub replies don't drag it back. Preview passes `--live-sync <port>`; with a player connected, Preview and scene save send `open` (reload in place via `ScriptRunner.reload()`) instead of relaunching. The player retries the connection every second; **F2 → Config → Editor sync** (`PlayerSettings.live_sync`) turns it off. Preview starts the player on desktop (`--desktop`) unless `vj_editor/player/start_in_vr` is set, since authoring is desktop-first with occasional F1 checks in the headset. Tests: `tests/test_live_sync.gd`.*
 
 - `ws_server.gd` in plugin, `ws_client.gd` in player.
 - "Launch Player ▶" button spawns a player process with `--live-sync <port>`.
 - Bidirectional `seek` / `play` / `pause` / `reload` / `report_position`.
 - Deliverable: scrub in Godot → running player seeks; save in Godot → running player hot-reloads.
 
-### Phase 9 — Worked example: forest → tunnel (5–7 days)
+### Phase 9 — Worked example: forest → tunnel (5–7 days) 🚧 FIRST PASS PLAYS END-TO-END
 
-- Build the prefabs: forest scene (terrain + trees), tunnel (tube + scrolling emissive shader), screen (with UV sub-rect shader).
-- Compose `examples/forest_to_tunnel/script.json`.
+Done so far — authored in Godot in `project_script_forest_tunnel/` (a copy of the moving-screen authoring project), exported to `scripts/forest_tunnel/video.json`:
+
+- **Prefabs**: `forest.tscn` (baked by `tools/build_forest.gd`: ground, ~420 firs and fireflies as MultiMeshes, no scripts) and `tunnel.tscn` (a 14 m open tube; rings and streaks in `tunnel.gdshader`, driven by a keyframed `scroll` param so scrubbing is deterministic). The screen's glow shader gained `uv_offset` / `uv_scale` (source sub-rect), and its halo alpha now scales with `glow_intensity`, so a screen at 0 has no dark rim and split pieces sit edge to edge without seams. The screen prefab gained `curvature` (vertex bend of a subdivided quad; `config.curvature` or a `<id>.display` track).
+- **Timeline**: forest with a curved glowing screen → `vr_cut` fade at 45 s swaps to the tunnel at peak black → the screen flattens and dims, then splits at 55 s into three column screens (thirds of the video) that are choreographed independently → they merge at 160 s → cut back to the forest at 175 s. No format change was needed for any of it, which validates the v1 schema as the plan predicted.
+- **Exporter** (addon): `shader_parameter` and `curvature` tracks → `shader_param`; a `VJViewer` camera's keys → `vr_cut` events (starting half the fade early so the cut lands at peak black); custom prefabs are bundled next to the JSON with their external dependencies embedded (dependency-free ones are copied verbatim, because re-saving under `--headless` loses MultiMesh buffers); `res://../` output paths.
+- **Preview**: in the authoring project, scrubbing the AnimationPlayer is a rough preview (screens show a three-column test card or a `preview_image` still). **▶ Preview in player** (3D toolbar / Tools menu) exports and launches `project_engine` with `--script <json> --start <scrub time>`; pressing it again while that player is open only re-exports, and the player hot-reloads.
+- **Player**: every spawned screen (not just `main_screen`) goes under `ScreenMount`, so split screens follow the user's size and distance settings; new `--start <seconds>` flag (applied once the video has loaded).
+- 56 tests pass (new: example scripts parse, bundled prefabs load from disk, forest_tunnel object sets at key times, shader value coercion, slot routing).
+
+Remaining:
+- VR comfort pass on a headset (the fades, and whether the columns' fly-by at 68–76 s is too close).
+- `env_swap` composite event: not needed so far. Two events at the same `t` read fine.
+- Cuts only return to the home pose. A real "move somewhere else" cut would need `ScreenMount` to follow the viewer (see the forest_tunnel README).
 - Add capabilities discovered during authoring — likely: a `env_swap` composite event that spawns/despawns a set atomically; a "3-way screen split" pattern documented as a prefab convention.
 - Verify comfort: use `vr_cut` with `fade_to_black` for the environment transition.
 - Deliverable: a shippable demo piece and a lessons-learned pass over the format.
@@ -496,12 +594,10 @@ The project is v1-shippable when all of these are true:
 
 - A viewer can double-click `player.exe`, use the wrist HUD to browse to a script folder on disk, put on a headset, and watch the piece play with correct video + timeline + VR comfort.
 - An author can open Godot with the plugin enabled, create a new `script.json` from scratch, add keyframes and spawn events using the timeline dock, click "Launch Player ▶", and see their edits live-update in a running player instance.
-- The `examples/forest_to_tunnel/` demo runs end-to-end and demonstrates every schema feature.
+- The `scripts/forest_tunnel/` demo runs end-to-end and demonstrates every schema feature.
 - The three docs (`script_format.md`, `authoring_guide.md`, `player_usage.md`) are complete enough for a stranger to author and ship a piece without asking.
 - `tests/` has coverage of the script parser and reconciliation logic, and passes.
 
 ## Next Concrete Step
 
-**Verify 4b on a real headset.** The rig, wrist HUD, pointer, menu-button toggle, `_snap_camera` VR branch, and in-headset fade quad all compile and load cleanly, but none of it has been exercised through an OpenXR runtime yet. Bring up SteamVR, launch the player, click "Enter VR", and confirm: (1) the wrist HUD appears on the left controller with a working play/pause button when trigger-clicked; (2) pressing the right-controller menu button pops the floating panel in front of the viewer; (3) a `vr_cut` with `fade_to_black` fades the headset view to black, moves the origin, and fades back. Then fold in the small nits: **Fill the floating panel's Camera tab** (Phase 4a settings) — virtual-screen size / distance / curvature sliders wired to `Stage/VideoQuad`, values persisted to `user://settings.cfg`. Also sweep known small nits: (a) `toggle_vr` in `project.godot` is bound to F1 while several places still say F12 — pick one; (b) when the floating panel is open, releasing right-click doesn't cleanly return `DesktopCamera` out of look-mode (the panel eats the press but not the release); (c) `VideoBridge` has no volume setter yet — the wrist HUD volume slider is wired but a stub.
-
-Known small nits to sweep when convenient (not blocking): (a) `toggle_vr` in `project.godot` is bound to F1 while several places still say F12 — pick one; (b) when the floating panel is open, releasing right-click doesn't cleanly return `DesktopCamera` out of look-mode (the panel eats the press but not the release).
+See **Current Status → Open points** at the top; pick from there. The earlier note here (verify 4b on a headset, plus small nits) is folded into that list — the volume stub, `DEFAULT_SCRIPT` and curvature nits are fixed, the FileDialog check no longer applies, and the F1/F12 and right-click items are listed under Player.

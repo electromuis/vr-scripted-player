@@ -54,3 +54,8 @@ desktop.ini
 *.m4v
 *.wmv
 *.flv
+
+# Junctions to shared addons (point at addon_vj/ and project_engine/addons/)
+project_script_example/addons/vj_editor
+project_script_forest_tunnel/addons/vj_editor
+project_script_forest_tunnel/addons/gde_gozen

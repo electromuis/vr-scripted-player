@@ -5,10 +5,15 @@
 
 [sub_resource type="QuadMesh" id="QuadMesh_screen"]
 size = Vector2(32, 18)
+subdivide_width = 48
+subdivide_depth = 27
 
 [sub_resource type="ShaderMaterial" id="ShaderMat_screen_glow"]
+resource_local_to_scene = true
 shader = ExtResource("2_glow")
 shader_parameter/video_uv_bounds = Vector4(0.25, 0.25, 0.75, 0.75)
+shader_parameter/uv_offset = Vector2(0, 0)
+shader_parameter/uv_scale = Vector2(1, 1)
 shader_parameter/glow_intensity = 1.6
 shader_parameter/glow_radius = 0.32
 shader_parameter/glow_power = 2.0
@@ -20,8 +25,10 @@ shader_parameter/inner_glow_width = 0.09
 
 [node name="Screen" type="Node3D"]
 script = ExtResource("1_screen")
+shader_material = SubResource("ShaderMat_screen_glow")
 
 [node name="Mesh" type="MeshInstance3D" parent="."]
+extra_cull_margin = 16.0
 mesh = SubResource("QuadMesh_screen")
 
 [node name="RenderViewport" type="SubViewport" parent="."]
@@ -31,7 +38,6 @@ transparent_bg = true
 disable_3d = true
 
 [node name="Canvas" type="ColorRect" parent="RenderViewport"]
-material = SubResource("ShaderMat_screen_glow")
 anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 2

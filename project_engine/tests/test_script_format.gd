@@ -124,9 +124,49 @@ static func test_duplicate_object_ids(tc: TestCase) -> void:
 	tc.assert_err(r, "duplicated")
 
 
-static func test_minimal_example_file_parses(tc: TestCase) -> void:
-	var r := ScriptFormat.load_from_file("res://examples/minimal/script.json")
-	tc.assert_ok(r, "examples/minimal/script.json must parse")
+## Example scripts live in the repo's scripts/ folder, next to project_engine.
+static func _example(rel: String) -> String:
+	return ProjectSettings.globalize_path("res://../scripts").simplify_path().path_join(rel)
+
+
+static func test_example_scripts_parse(tc: TestCase) -> void:
+	for rel in ["minimal/video.json", "moving_screen/video.json", "forest_tunnel/video.json"]:
+		tc.assert_ok(ScriptFormat.load_from_file(_example(rel)), "scripts/%s must parse" % rel)
+
+
+static func test_forest_tunnel_prefabs_load(tc: TestCase) -> void:
+	# Bundled prefabs are loaded from disk by absolute path, not res://.
+	var r := ScriptFormat.load_from_file(_example("forest_tunnel/video.json"))
+	tc.assert_ok(r)
+	if not r.ok:
+		return
+	var data: TimelineData = r.data
+	for key in ["forest", "tunnel", "screen"]:
+		var path := data.resolve_prefab(key)
+		tc.assert_true(ResourceLoader.load(path) is PackedScene, "prefab '%s' loads from %s" % [key, path])
+
+
+static func test_forest_tunnel_scene_states(tc: TestCase) -> void:
+	# Environment swap at 45 s, screen split at 55 s, merge at 160 s, back to
+	# the forest at 175 s.
+	var r := ScriptFormat.load_from_file(_example("forest_tunnel/video.json"))
+	tc.assert_ok(r)
+	if not r.ok:
+		return
+	var events: Array = r.data.events_sorted()
+	var ids_at := func(t: float) -> Array:
+		var ids := ScriptRunner._project_state_at(events, t).keys()
+		ids.sort()
+		return ids
+	# `backdrop` lives inside main_screen and goes with it; the columns and
+	# `rings` live inside the `screens` group, which stays (empty) throughout.
+	tc.assert_eq(ids_at.call(10.0), ["backdrop", "forest", "main_screen", "screens"])
+	tc.assert_eq(ids_at.call(50.0), ["backdrop", "main_screen", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(57.0), ["screen_center", "screen_left", "screen_right", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(60.0), ["rings", "screen_center", "screen_left", "screen_right", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(155.0), ["screen_center", "screen_left", "screen_right", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(165.0), ["backdrop", "main_screen", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(180.0), ["backdrop", "forest", "main_screen", "screens"])
 
 
 static func test_timeline_helpers(tc: TestCase) -> void:

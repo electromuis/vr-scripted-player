@@ -11,6 +11,9 @@ var tracks: Array = []
 
 var script_path: String = ""
 var base_dir: String = ""
+## True for timelines the player built itself (e.g. a plain video file);
+## script_path then points at the media, not at a watchable .json.
+var synthetic: bool = false
 
 
 func title() -> String:
@@ -30,13 +33,15 @@ func continuous_tracks() -> Array:
 	return out
 
 
+## Events by time; ones at the same time keep their file order, so a
+## group's spawn listed before its children's also fires first.
 func events_sorted() -> Array:
-	var out: Array = []
-	for t in tracks:
-		if t.get("type", "") == "event":
-			out.append(t)
-	out.sort_custom(func(a, b): return float(a.get("t", 0.0)) < float(b.get("t", 0.0)))
-	return out
+	var keyed: Array = []  # [t, file index, event]
+	for i in tracks.size():
+		if tracks[i].get("type", "") == "event":
+			keyed.append([float(tracks[i].get("t", 0.0)), i, tracks[i]])
+	keyed.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
+	return keyed.map(func(k): return k[2])
 
 
 func resolve(rel_path: String) -> String:

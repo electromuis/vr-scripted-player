@@ -208,12 +208,40 @@ static func _validate_event(e: Dictionary, loc: String, errors: Array) -> void:
 				errors.append("%s.id required for spawn" % loc)
 			if typeof(e.get("prefab")) != TYPE_STRING:
 				errors.append("%s.prefab required for spawn" % loc)
+			if e.has("parent") and (typeof(e["parent"]) != TYPE_STRING or e["parent"] == e.get("id")):
+				errors.append("%s.parent must be another object's id" % loc)
+			if e.has("config"):
+				_validate_config(e["config"], loc + ".config", errors)
 		"despawn":
 			if typeof(e.get("target")) != TYPE_STRING:
 				errors.append("%s.target required for despawn" % loc)
 		"vr_cut", "vr_teleport":
 			if typeof(e.get("to")) != TYPE_DICTIONARY:
 				errors.append("%s.to must be an object with position/rotation_deg" % loc)
+
+
+static func _validate_config(cfg, loc: String, errors: Array) -> void:
+	if typeof(cfg) != TYPE_DICTIONARY:
+		errors.append("%s must be an object" % loc)
+		return
+	for k in ["opacity", "curvature", "vertical_curvature", "render_scale", "resolution"]:
+		if cfg.has(k) and typeof(cfg[k]) not in [TYPE_INT, TYPE_FLOAT]:
+			errors.append("%s.%s must be a number" % [loc, k])
+	for k in ["modifiers", "reactive"]:
+		if cfg.has(k) and typeof(cfg[k]) != TYPE_DICTIONARY:
+			errors.append("%s.%s must be an object" % [loc, k])
+	if not cfg.has("effects"):
+		return
+	var effects = cfg["effects"]
+	if typeof(effects) != TYPE_ARRAY:
+		errors.append("%s.effects must be an array" % loc)
+		return
+	for i in effects.size():
+		var e = effects[i]
+		if typeof(e) != TYPE_DICTIONARY or typeof(e.get("shader")) != TYPE_STRING:
+			errors.append("%s.effects[%d] must be an object with a shader (a shaders[] key)" % [loc, i])
+		elif e.has("params") and typeof(e["params"]) != TYPE_DICTIONARY:
+			errors.append("%s.effects[%d].params must be an object" % [loc, i])
 
 
 static func _err(msg: String) -> Dictionary:

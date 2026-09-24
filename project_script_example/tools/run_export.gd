@@ -19,6 +19,6 @@ func _initialize() -> void:
 		push_error("run_export: instantiate returned null")
 		quit(1)
 		return
-	SceneExporterScript.export_from_root(root)
-	root.queue_free()
-	quit(0)
+	var out := SceneExporterScript.export_from_root(root)
+	root.free()
+	quit(0 if out != "" else 1)

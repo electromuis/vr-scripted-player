@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Shader" path="res://prefabs/tunnel.gdshader" id="1_tunnel"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_tunnel"]
+top_radius = 14.0
+bottom_radius = 14.0
+height = 200.0
+radial_segments = 64
+rings = 1
+cap_top = false
+cap_bottom = false
+
+[sub_resource type="ShaderMaterial" id="ShaderMat_tunnel"]
+resource_local_to_scene = true
+shader = ExtResource("1_tunnel")
+
+[node name="Tunnel" type="MeshInstance3D"]
+cast_shadow = 0
+extra_cull_margin = 10.0
+mesh = SubResource("CylinderMesh_tunnel")
+material_override = SubResource("ShaderMat_tunnel")

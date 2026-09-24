@@ -212,3 +212,99 @@ static func test_shader_param_track_applied(tc: TestCase) -> void:
 	runner.tick(0.5)
 	tc.assert_true(abs(mat.get_shader_parameter("glow") - 0.5) < 0.001, "glow should be ~0.5")
 	stage.queue_free()
+
+
+static func test_shader_value_coerces_arrays(tc: TestCase) -> void:
+	tc.assert_eq(ScriptRunner.shader_value([1, 2]), Vector2(1, 2))
+	tc.assert_eq(ScriptRunner.shader_value([1, 2, 3]), Vector3(1, 2, 3))
+	tc.assert_eq(ScriptRunner.shader_value([1, 2, 3, 4]), Vector4(1, 2, 3, 4))
+	tc.assert_eq(ScriptRunner.shader_value(0.5), 0.5)
+	tc.assert_eq(ScriptRunner.shader_value([1, 2, 3, 4, 5]), [1, 2, 3, 4, 5])
+
+
+static func test_shader_param_array_reaches_vec_uniform(tc: TestCase) -> void:
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var mi := MeshInstance3D.new()
+	mi.mesh = QuadMesh.new()
+	var shader := Shader.new()
+	shader.code = "shader_type spatial; uniform vec2 uv_offset = vec2(0.0); void fragment() { ALBEDO = vec3(uv_offset, 0.0); }"
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mi.material_override = mat
+	stage.add_child(mi)
+	runner.load_timeline(_timeline_from({
+		"tracks": [{
+			"type": "shader_param", "target": "col.surface", "param": "uv_offset",
+			"keyframes": [{"t": 0.0, "value": [0.0, 0.0]}, {"t": 1.0, "value": [1.0, 0.0]}]
+		}]
+	}))
+	runner.registry().register("col", mi)
+	runner.tick(0.5)
+	tc.assert_eq(mat.get_shader_parameter("uv_offset"), Vector2(0.5, 0.0))
+	stage.queue_free()
+
+
+static func test_shader_param_routes_by_slot(tc: TestCase) -> void:
+	# Prefabs exposing set_material_param() (e.g. Screen) get the slot name,
+	# so `<id>.display` and `<id>.surface` can reach different materials.
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var script := GDScript.new()
+	script.source_code = "extends Node3D
+var calls: Array = []
+func set_material_param(slot, param, value):
+	calls.append([slot, param, value])
+"
+	script.reload()
+	var node := Node3D.new()
+	node.set_script(script)
+	stage.add_child(node)
+	runner.load_timeline(_timeline_from({
+		"tracks": [{
+			"type": "shader_param", "target": "scr.display", "param": "curvature",
+			"keyframes": [{"t": 0.0, "value": 0.4}]
+		}]
+	}))
+	runner.registry().register("scr", node)
+	runner.tick(0.1)
+	tc.assert_eq(node.get("calls"), [["display", "curvature", 0.4]])
+	stage.queue_free()
+
+
+static func test_reached_end_fires_once_and_rearms_on_seek(tc: TestCase) -> void:
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var ends := [0]
+	runner.reached_end.connect(func(): ends[0] += 1)
+	runner.load_timeline(_timeline_from({"media": {"video": "x.mp4", "duration": 10.0}}))
+	runner.tick(9.0)
+	tc.assert_eq(ends[0], 0, "not at the end yet")
+	runner.tick(2.0)
+	tc.assert_eq(ends[0], 1)
+	runner.tick(1.0)
+	tc.assert_eq(ends[0], 1, "staying at the end doesn't fire again")
+	runner.seek(0.0)
+	runner.tick(10.0)
+	tc.assert_eq(ends[0], 2, "a seek re-arms it (loop)")
+	stage.queue_free()
+
+
+static func test_reached_end_waits_for_duration(tc: TestCase) -> void:
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var ends := [0]
+	runner.reached_end.connect(func(): ends[0] += 1)
+	# No declared duration: 0 until the video reports its length.
+	runner.load_timeline(_timeline_from({"media": {"video": "x.mp4"}}))
+	runner.seek(0.0)
+	runner.tick(0.0)
+	tc.assert_eq(ends[0], 0, "unknown length is not an end")
+	runner.set_video_duration(5.0)
+	runner.tick(6.0)
+	tc.assert_eq(ends[0], 1)
+	stage.queue_free()

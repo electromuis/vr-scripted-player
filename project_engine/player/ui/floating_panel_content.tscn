@@ -1,4 +1,11 @@
-[gd_scene load_steps=2 format=3 uid="uid://cvjfpanel00001"]
+[gd_scene load_steps=8 format=3 uid="uid://cvjfpanel00001"]
+
+[ext_resource type="Script" path="res://player/ui/floating_panel_content.gd" id="1_root"]
+[ext_resource type="Script" path="res://player/ui/camera_tab.gd" id="2_camera"]
+[ext_resource type="Script" path="res://player/ui/files_tab.gd" id="3_files"]
+[ext_resource type="Script" path="res://player/ui/config_tab.gd" id="4_config"]
+[ext_resource type="Script" path="res://player/ui/network_tab.gd" id="5_network"]
+[ext_resource type="Script" path="res://player/ui/presets_tab.gd" id="6_presets"]
 
 [sub_resource type="StyleBoxFlat" id="Bg"]
 bg_color = Color(0.08, 0.08, 0.11, 0.92)
@@ -19,6 +26,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("Bg")
+script = ExtResource("1_root")
 
 [node name="Tabs" type="TabContainer" parent="."]
 layout_mode = 2
@@ -26,28 +34,480 @@ tab_alignment = 1
 
 [node name="Camera" type="MarginContainer" parent="Tabs"]
 layout_mode = 2
-theme_override_constants/margin_left = 12
+theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
+theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 12
 
-[node name="Placeholder" type="Label" parent="Tabs/Camera"]
+[node name="Scroll" type="ScrollContainer" parent="Tabs/Camera"]
 layout_mode = 2
-text = "Camera settings will go here (virtual screen size / distance / curvature)."
-autowrap_mode = 3
+horizontal_scroll_mode = 0
+
+[node name="CameraTab" type="VBoxContainer" parent="Tabs/Camera/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+script = ExtResource("2_camera")
+
+[node name="PresetRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PresetLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/PresetRow"]
+layout_mode = 2
+text = "Preset"
+
+[node name="PresetOption" type="OptionButton" parent="Tabs/Camera/Scroll/CameraTab/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SaveButton" type="Button" parent="Tabs/Camera/Scroll/CameraTab/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Save"
+
+[node name="NewButton" type="Button" parent="Tabs/Camera/Scroll/CameraTab/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "New"
+
+[node name="TargetRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TargetLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/TargetRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Adjust"
+
+[node name="TargetOption" type="OptionButton" parent="Tabs/Camera/Scroll/CameraTab/TargetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LayersLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/TargetRow"]
+layout_mode = 2
+text = "Layers"
+
+[node name="LayerCountSpin" type="SpinBox" parent="Tabs/Camera/Scroll/CameraTab/TargetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 8.0
+rounded = true
+
+[node name="ViewRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ProjectionLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/ViewRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Projection"
+
+[node name="ProjectionOption" type="OptionButton" parent="Tabs/Camera/Scroll/CameraTab/ViewRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ShaderOption" type="OptionButton" parent="Tabs/Camera/Scroll/CameraTab/ViewRow"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="ResetViewButton" type="Button" parent="Tabs/Camera/Scroll/CameraTab/ViewRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Reset view"
+
+[node name="LayerOptionsRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="LayerOptionsPad" type="Control" parent="Tabs/Camera/Scroll/CameraTab/LayerOptionsRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+
+[node name="LockCheck" type="CheckBox" parent="Tabs/Camera/Scroll/CameraTab/LayerOptionsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Lock to screen"
+
+[node name="Sep" type="HSeparator" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+
+[node name="SizeRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SizeLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/SizeRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Size"
+
+[node name="SizeSlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/SizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = 0.1
+max_value = 20.0
+step = 0.01
+value = 1.0
+
+[node name="SizeValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/SizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "1.00x"
+horizontal_alignment = 2
+
+[node name="DistanceRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="DistanceLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/DistanceRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Distance"
+
+[node name="DistanceSlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/DistanceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = -30.0
+max_value = 10.0
+step = 0.05
+value = 0.0
+
+[node name="DistanceValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/DistanceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "0.00 m"
+horizontal_alignment = 2
+
+[node name="HeightRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="HeightLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/HeightRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Height"
+
+[node name="HeightSlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/HeightRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = -3.0
+max_value = 3.0
+step = 0.01
+value = 0.0
+
+[node name="HeightValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/HeightRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "+0.00 m"
+horizontal_alignment = 2
+
+[node name="TiltRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TiltLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/TiltRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Tilt"
+
+[node name="TiltSlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/TiltRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = -90.0
+max_value = 90.0
+step = 1.0
+value = 0.0
+
+[node name="TiltValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/TiltRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "+0°"
+horizontal_alignment = 2
+
+[node name="CurvatureRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="CurvatureLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/CurvatureRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Curvature"
+
+[node name="CurvatureSlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/CurvatureRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = 0.0
+max_value = 1.0
+step = 0.01
+value = 0.0
+
+[node name="CurvatureValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/CurvatureRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "0.00"
+horizontal_alignment = 2
+
+[node name="VCurveRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="VCurveLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/VCurveRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "V. curvature"
+
+[node name="VCurveSlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/VCurveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = 0.0
+max_value = 1.0
+step = 0.01
+value = 0.0
+
+[node name="VCurveValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/VCurveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "0.00"
+horizontal_alignment = 2
+
+[node name="OpacityRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="OpacityLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/OpacityRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Opacity"
+
+[node name="OpacitySlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/OpacityRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = 0.0
+max_value = 1.0
+step = 0.01
+value = 1.0
+
+[node name="OpacityValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/OpacityRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "100%"
+horizontal_alignment = 2
+
+[node name="ResolutionRow" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ResolutionLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/ResolutionRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Resolution"
+
+[node name="ResolutionSlider" type="HSlider" parent="Tabs/Camera/Scroll/CameraTab/ResolutionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+scrollable = false
+min_value = 0.1
+max_value = 2.0
+step = 0.05
+value = 1.0
+
+[node name="ResolutionValue" type="Label" parent="Tabs/Camera/Scroll/CameraTab/ResolutionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "100%"
+horizontal_alignment = 2
+
+[node name="ParamsBox" type="VBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="EffectsSep" type="HSeparator" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+
+[node name="EffectsHeader" type="HBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="EffectsLabel" type="Label" parent="Tabs/Camera/Scroll/CameraTab/EffectsHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Effects (run in order on the output)"
+
+[node name="AddEffectButton" type="Button" parent="Tabs/Camera/Scroll/CameraTab/EffectsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "+ Effect"
+
+[node name="EffectsBox" type="VBoxContainer" parent="Tabs/Camera/Scroll/CameraTab"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="Files" type="MarginContainer" parent="Tabs"]
 visible = false
 layout_mode = 2
 theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
+theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+theme_override_constants/margin_bottom = 8
 
-[node name="Placeholder" type="Label" parent="Tabs/Files"]
+[node name="FilesTab" type="VBoxContainer" parent="Tabs/Files"]
+unique_name_in_owner = true
 layout_mode = 2
-text = "Script folder picker will go here."
+theme_override_constants/separation = 6
+script = ExtResource("3_files")
+
+[node name="FilesHeaderRow" type="HBoxContainer" parent="Tabs/Files/FilesTab"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BackButton" type="Button" parent="Tabs/Files/FilesTab/FilesHeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Back to the previous folder"
+disabled = true
+text = "Back"
+
+[node name="UpButton" type="Button" parent="Tabs/Files/FilesTab/FilesHeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Up one level"
+text = "Up"
+
+[node name="PathLabel" type="Label" parent="Tabs/Files/FilesTab/FilesHeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = ""
+clip_text = true
+theme_override_colors/font_color = Color(0.75, 0.85, 1, 1)
+
+[node name="SortOption" type="OptionButton" parent="Tabs/Files/FilesTab/FilesHeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Sort order"
+
+[node name="ViewButton" type="Button" parent="Tabs/Files/FilesTab/FilesHeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Switch between list and tiles"
+text = "Tiles"
+
+[node name="EntryList" type="ItemList" parent="Tabs/Files/FilesTab"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true
+
+[node name="StatusLabel" type="Label" parent="Tabs/Files/FilesTab"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
 autowrap_mode = 3
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="Network" type="MarginContainer" parent="Tabs"]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="NetworkTab" type="VBoxContainer" parent="Tabs/Network"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+script = ExtResource("5_network")
+
+[node name="HeaderRow" type="HBoxContainer" parent="Tabs/Network/NetworkTab"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NetBackButton" type="Button" parent="Tabs/Network/NetworkTab/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Back to the previous folder"
+disabled = true
+text = "Back"
+
+[node name="NetUpButton" type="Button" parent="Tabs/Network/NetworkTab/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Up one level"
+disabled = true
+text = "Up"
+
+[node name="NetPathLabel" type="Label" parent="Tabs/Network/NetworkTab/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = ""
+clip_text = true
+theme_override_colors/font_color = Color(0.75, 0.85, 1, 1)
+
+[node name="NetRefreshButton" type="Button" parent="Tabs/Network/NetworkTab/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Refresh"
+
+[node name="NetSortOption" type="OptionButton" parent="Tabs/Network/NetworkTab/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Sort order"
+
+[node name="NetViewButton" type="Button" parent="Tabs/Network/NetworkTab/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Switch between list and tiles"
+text = "Tiles"
+
+[node name="NetEntryList" type="ItemList" parent="Tabs/Network/NetworkTab"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true
+
+[node name="NetStatusLabel" type="Label" parent="Tabs/Network/NetworkTab"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 
 [node name="Config" type="MarginContainer" parent="Tabs"]
 visible = false
@@ -57,10 +517,10 @@ theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 12
 theme_override_constants/margin_bottom = 12
 
-[node name="Placeholder" type="Label" parent="Tabs/Config"]
+[node name="ConfigTab" type="VBoxContainer" parent="Tabs/Config"]
+unique_name_in_owner = true
 layout_mode = 2
-text = "General configuration (persisted to user://settings.cfg) will go here."
-autowrap_mode = 3
+script = ExtResource("4_config")
 
 [node name="Presets" type="MarginContainer" parent="Tabs"]
 visible = false
@@ -70,7 +530,27 @@ theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 12
 theme_override_constants/margin_bottom = 12
 
-[node name="Placeholder" type="Label" parent="Tabs/Presets"]
+[node name="PresetsTab" type="VBoxContainer" parent="Tabs/Presets"]
+unique_name_in_owner = true
 layout_mode = 2
-text = "Named viewpoint / screen presets will go here."
-autowrap_mode = 3
+script = ExtResource("6_presets")
+
+[node name="HeaderButtons" type="HBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 0
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="QuitButton" type="Button" parent="HeaderButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Quit the player (press twice)"
+text = "Quit"
+
+[node name="CloseButton" type="Button" parent="HeaderButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(44, 0)
+tooltip_text = "Close menu"
+text = "X"

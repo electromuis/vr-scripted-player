@@ -53,7 +53,9 @@ func owned_ids() -> Array:
 	return out
 
 
-func spawn(id: String, prefab: PackedScene, stage: Node3D, xform: Transform3D) -> Node3D:
+## Instantiate `prefab` as `id` under `parent` (the stage, or another
+## object's node), at `xform` in the parent's space.
+func spawn(id: String, prefab: PackedScene, parent: Node3D, xform: Transform3D) -> Node3D:
 	if _by_id.has(id):
 		push_warning("ObjectRegistry: id '%s' already exists; despawning first." % id)
 		despawn(id, 0.0)
@@ -65,7 +67,7 @@ func spawn(id: String, prefab: PackedScene, stage: Node3D, xform: Transform3D) -
 		push_warning("ObjectRegistry: prefab for '%s' did not instantiate a Node3D." % id)
 		return null
 	node.transform = xform
-	stage.add_child(node)
+	parent.add_child(node)
 	_by_id[id] = node
 	object_spawned.emit(id, node)
 	return node
@@ -78,6 +80,7 @@ func despawn(id: String, fade_duration: float) -> void:
 		return
 	if fade_duration <= 0.0:
 		_by_id.erase(id)
+		_drop_descendants(node)
 		node.queue_free()
 		return
 	_fading_out[id] = { "time_left": fade_duration, "duration": fade_duration }
@@ -99,7 +102,17 @@ func tick_fades(delta: float) -> void:
 		_fading_out.erase(id)
 		_by_id.erase(id)
 		if node != null and is_instance_valid(node):
+			_drop_descendants(node)
 			node.queue_free()
+
+
+## Objects spawned under `node` go with it: forget their ids too.
+func _drop_descendants(node: Node) -> void:
+	for id in _by_id.keys():
+		var n: Node = _by_id[id]
+		if is_instance_valid(n) and node.is_ancestor_of(n):
+			_by_id.erase(id)
+			_fading_out.erase(id)
 
 
 func clear_owned() -> void:
@@ -123,15 +136,9 @@ func _apply_alpha_to_id(id: String, alpha: float) -> void:
 	_apply_alpha_recursive(node, alpha)
 
 
+## Fades every mesh (any material, MultiMeshes too) via transparency.
 func _apply_alpha_recursive(node: Node, alpha: float) -> void:
 	if node is GeometryInstance3D:
-		var gi := node as GeometryInstance3D
-		var mat: Material = gi.get_active_material(0)
-		if mat is StandardMaterial3D:
-			var sm := mat as StandardMaterial3D
-			sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			var c := sm.albedo_color
-			c.a = alpha
-			sm.albedo_color = c
+		(node as GeometryInstance3D).transparency = 1.0 - alpha
 	for child in node.get_children():
 		_apply_alpha_recursive(child, alpha)
