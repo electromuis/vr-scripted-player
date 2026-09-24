@@ -173,6 +173,10 @@ func _on_media_key(keycode: Key) -> void:
 			_change_volume(VOLUME_STEP)
 		KEY_DOWN:
 			_change_volume(-VOLUME_STEP)
+		KEY_F11:
+			_player_settings.fullscreen = not _player_settings.fullscreen
+		KEY_H:
+			_player_settings.show_play_bar = not _player_settings.show_play_bar
 		KEY_SPACE, KEY_K:
 			if not locked and keycode == KEY_SPACE:
 				return
@@ -410,11 +414,12 @@ func _update_mode_label() -> void:
 	if xr_mode.is_in_vr():
 		mode_label.text = "VR"
 	else:
-		mode_label.text = "Desktop (right-click look · ←/→ seek · ↑/↓ volume · R reset view · F2 menu · F12 VR)"
+		mode_label.text = "Desktop (right-click look · ←/→ seek · ↑/↓ volume · R reset view · H play bar · F11 fullscreen · F2 menu · F12 VR)"
 
 
 func _init_media_controls() -> void:
 	var mc := MEDIA_CONTROLS_SCENE.instantiate()
+	mc.name = "MediaControls"
 	$UI.add_child(mc)
 	mc.bind(runner)
 	mc.previous_requested.connect(play_previous)
@@ -562,8 +567,10 @@ func _update_layer_anchor() -> void:
 	if _layer_anchor == null:
 		return
 	var t := Transform3D.IDENTITY
-	if is_instance_valid(_main_screen) and _main_screen.get_parent() == screen_mount:
-		t = _main_screen.transform * _default_screen_transform().affine_inverse()
+	# In mount space, so a main_screen inside a script's group counts the
+	# group's motion too.
+	if is_instance_valid(_main_screen) and screen_mount.is_ancestor_of(_main_screen):
+		t = screen_mount.global_transform.affine_inverse() * _main_screen.global_transform * _default_screen_transform().affine_inverse()
 	if not t.is_equal_approx(_layer_anchor.transform):
 		_layer_anchor.transform = t
 		_place_layers()
@@ -626,6 +633,7 @@ func _apply_player_settings() -> void:
 	xr_rig.movement.locked = locked
 	desktop_camera.movement_enabled = not locked
 	floor_mesh.visible = _player_settings.show_floor
+	_apply_window_settings()
 	_skyboxes.apply(world_env.environment, _player_settings.skybox)
 	if _video != null:
 		_video.set_volume(_player_settings.volume)
@@ -633,6 +641,20 @@ func _apply_player_settings() -> void:
 			_audio.set_input_gain(_video.audio_gain())
 	if _live_sync != null:
 		_live_sync.set_enabled(_player_settings.live_sync)
+
+
+## Desktop window preferences: fullscreen and the bottom play bar.
+func _apply_window_settings() -> void:
+	var mc := get_node_or_null("UI/MediaControls") as Control
+	if mc != null:
+		mc.visible = _player_settings.show_play_bar
+	if DisplayServer.get_name() == "headless":
+		return
+	var want := DisplayServer.WINDOW_MODE_FULLSCREEN if _player_settings.fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
+	var mode := DisplayServer.window_get_mode()
+	var is_full := mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+	if is_full != _player_settings.fullscreen:
+		DisplayServer.window_set_mode(want)
 
 
 ## Effective projection key for the current video.
@@ -841,8 +863,8 @@ func _on_object_spawned(id: String, node: Node3D) -> void:
 		# mount) layer on top without ever fighting animation. Objects
 		# spawned inside another one stay there.
 		node.reparent(screen_mount, false)
-		if id == DefaultScreen.SCREEN_ID:
-			_apply_curvature(true)
+	if id == DefaultScreen.SCREEN_ID and screen_mount != null and screen_mount.is_ancestor_of(node):
+		_apply_curvature(true)
 	if node is Screen:
 		_apply_display_to(node)
 	if node is Visualizer:

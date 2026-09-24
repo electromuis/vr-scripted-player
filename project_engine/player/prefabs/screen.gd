@@ -27,7 +27,14 @@ extends Node3D
 ## RenderViewport's size, except after a Padding effect
 ## (VisualizerShaders.PADDING): that pass and the ones after it grow by its
 ## margin, and so does the flat quad (_pad_scale), so the picture keeps its
-## size and later effects can spread past its edge.
+## size and later effects can spread past its edge. Each pass is told where
+## the unpadded picture sits in it (`picture_rect`), and past a Rounded
+## corners effect how round its corners are (`picture_corners`).
+##
+## An effect that declares `prepass_tex` (VisualizerShaders.has_prepass) gets
+## a prepass: the same shader with `prepass` on, at `prepass_scale` of the
+## pass's size, whose output it reads as `prepass_tex`. Heavy, soft work
+## (a glow's halo) goes there, so only the sharp parts run at full size.
 ##
 ## Projection: flat keys draw on the quad; 180°/360° keys draw on a
 ## camera-centred sphere that only takes this node's rotation (so tilt and
@@ -58,8 +65,9 @@ var _frame_aspect: float = 0.0
 var _effect_keys: Array[String] = []
 var _effect_shaders: Array[Shader] = []
 var _effect_params: Array[Dictionary] = []
-## Built passes: [{material, viewport, effect}] per eye chain (effect -1 =
-## eye crop, which starts each stereo chain).
+## Built passes: [{material, viewport, effect, prepass}] per eye chain
+## (effect -1 = eye crop, which starts each stereo chain; prepass: an
+## effect's prepass, just before the effect's own pass).
 var _passes: Array[Dictionary] = []
 var _base_scale: Vector3 = Vector3.ONE  # the quad's scale before padding
 var _pad_scale: Vector2 = Vector2.ONE  # the quad's growth from Padding effects
@@ -333,6 +341,16 @@ func _build_chains(src: Texture2D) -> void:
 
 
 func _add_pass(shader: Shader, input: Texture2D, effect: int) -> Texture2D:
+	var pre: Texture2D = null
+	if effect >= 0 and VisualizerShaders.has_prepass(shader):
+		pre = _new_pass(shader, input, effect, true)
+	var out := _new_pass(shader, input, effect, false)
+	if pre != null:
+		_passes[-1].material.set_shader_parameter("prepass_tex", pre)
+	return out
+
+
+func _new_pass(shader: Shader, input: Texture2D, effect: int, prepass: bool) -> Texture2D:
 	var vp := SubViewport.new()
 	vp.size = render_viewport.size  # padding resizes it in _apply_effect_params
 	vp.transparent_bg = true
@@ -344,10 +362,12 @@ func _add_pass(shader: Shader, input: Texture2D, effect: int) -> Texture2D:
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
 	mat.set_shader_parameter("input_tex", input)
+	if prepass:
+		mat.set_shader_parameter("prepass", true)
 	rect.material = mat
 	vp.add_child(rect)
 	_chain_holder.add_child(vp)
-	_passes.append({"material": mat, "viewport": vp, "effect": effect})
+	_passes.append({"material": mat, "viewport": vp, "effect": effect, "prepass": prepass})
 	return vp.get_texture()
 
 
@@ -360,11 +380,13 @@ func _apply_effect_params() -> void:
 	var w := base
 	var h := 1.0
 	var px := Vector2(render_viewport.size) if render_viewport != null else Vector2.ONE
+	var corners := Vector2.ZERO
 	for p in _passes:
 		var i: int = p.effect
 		if i < 0:
 			w = base
 			h = 1.0
+			corners = Vector2.ZERO
 			px = Vector2(render_viewport.size)
 			(p.viewport as SubViewport).size = pass_size(px)
 			continue
@@ -372,13 +394,22 @@ func _apply_effect_params() -> void:
 		var params: Dictionary = _effect_params[i] if i < _effect_params.size() else {}
 		for k in params:
 			mat.set_shader_parameter(k, params[k])
-		if flat and i < _effect_keys.size() and _effect_keys[i] == VisualizerShaders.PADDING:
-			var grown := pad(w, h, px, float(params.get("amount", _padding_default())))
+		var key: String = _effect_keys[i] if i < _effect_keys.size() else ""
+		if flat and key == VisualizerShaders.PADDING:
+			var grown := pad(w, h, px, float(params.get("amount", _param_default(key, "amount"))))
 			w = grown.w
 			h = grown.h
 			px = grown.px
 		mat.set_shader_parameter("display_aspect", w / h)
-		(p.viewport as SubViewport).size = pass_size(px)
+		mat.set_shader_parameter("picture_rect", picture_rect(base, w, h))
+		mat.set_shader_parameter("picture_corners", corners)
+		if key == VisualizerShaders.ROUNDED_CORNERS and not p.prepass:
+			corners = Vector2(float(params.get("radius_x", _param_default(key, "radius_x"))),
+					float(params.get("radius_y", _param_default(key, "radius_y"))))
+		var size := px
+		if p.prepass:
+			size *= clampf(float(params.get("prepass_scale", _param_default(key, "prepass_scale", 1.0))), 0.05, 1.0)
+		(p.viewport as SubViewport).size = pass_size(size)
 	if _passes.is_empty():
 		w = base
 		h = 1.0
@@ -395,6 +426,12 @@ static func pad(w: float, h: float, px: Vector2, amount: float) -> Dictionary:
 			"px": px * Vector2((w + 2.0 * m) / w, (h + 2.0 * m) / h)}
 
 
+## Where the unpadded picture (`base` wide, 1 high) sits in a pass `w` × `h`
+## (Padding centres it), as UV x, y, width, height: `picture_rect`.
+static func picture_rect(base: float, w: float, h: float) -> Vector4:
+	return Vector4(0.5 - 0.5 * base / w, 0.5 - 0.5 / h, base / w, 1.0 / h)
+
+
 ## A pass's viewport size for `px` pixels, shrunk to fit 4096.
 static func pass_size(px: Vector2) -> Vector2i:
 	if px.x > 4096.0 or px.y > 4096.0:
@@ -402,11 +439,12 @@ static func pass_size(px: Vector2) -> Vector2i:
 	return Vector2i(px.round()).max(Vector2i.ONE * 16)
 
 
-static func _padding_default() -> float:
-	for spec in VisualizerShaders.hints_for(VisualizerShaders.PADDING).params:
-		if spec.name == "amount":
+## The default of effect `key`'s uniform `param`, from its hints.
+static func _param_default(key: String, param: String, fallback: float = 0.0) -> float:
+	for spec in VisualizerShaders.hints_for(key).params:
+		if spec.name == param:
 			return float(spec.default)
-	return 0.0
+	return fallback
 
 
 func _projection_shape() -> int:

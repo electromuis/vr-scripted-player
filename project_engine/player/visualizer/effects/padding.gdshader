@@ -8,7 +8,7 @@
 shader_type canvas_item;
 #include "res://player/visualizer/effect_prelude.gdshaderinc"
 
-uniform float amount : hint_range(0.0, 1.0, 0.01) = 0.25;
+uniform float amount : hint_range(0.0, 2.0, 0.01) = 0.25;
 
 void fragment() {
 	// display_aspect is this pass's (padded) shape; undo the margin to get

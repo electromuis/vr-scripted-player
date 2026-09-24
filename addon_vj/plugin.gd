@@ -8,6 +8,10 @@ extends EditorPlugin
 ##                                               (also in the Scene dock's right-click menu)
 ##   VJ: Convert value tracks to Bezier        — so the curve editor can edit them
 ##                                               (exporter/bezier_tracks.gd; undoable)
+##   VJ: Convert effect slots to nodes         — old effect_1..4 → VJEffect children
+##                                               (builtin_prefabs/effect_tools.gd; undoable)
+## The Scene dock's right-click menu on a screen or layer also has
+## "Add VJ effect ▸ <shader>".
 ## The preview is also a button in the 3D editor's toolbar.
 ##
 ## Preview launches the engine project with this editor's own Godot binary
@@ -26,6 +30,7 @@ const _MENU_EXPORT := "VJ: Export current scene to script.json…"
 const _MENU_PREVIEW := "VJ: Preview in player"
 const _MENU_MAKE_OBJECT := "VJ: Make VJ object"
 const _MENU_TO_BEZIER := "VJ: Convert value tracks to Bezier"
+const _MENU_EFFECT_SLOTS := "VJ: Convert effect slots to nodes"
 const _SETTING_ENGINE := "vj_editor/player/engine_project"
 const _SETTING_EXE := "vj_editor/player/executable"
 const _SETTING_PORT := "vj_editor/live_sync/port"
@@ -36,12 +41,14 @@ const SceneExporterScript := preload("res://addons/vj_editor/exporter/scene_expo
 const LiveSyncScript := preload("res://addons/vj_editor/live_sync/live_sync.gd")
 const BezierTracksScript := preload("res://addons/vj_editor/exporter/bezier_tracks.gd")
 const MakeVJObjectScript := preload("res://addons/vj_editor/modifiers/make_vj_object.gd")
+const EffectToolsScript := preload("res://addons/vj_editor/builtin_prefabs/effect_tools.gd")
 
 var _preview_button: Button
 var _live_label: Label
 var _live_sync: Node
 var _player_pid: int = -1
 var _make_object: EditorContextMenuPlugin
+var _effect_tools: EditorContextMenuPlugin
 
 
 func _enter_tree() -> void:
@@ -52,6 +59,10 @@ func _enter_tree() -> void:
 	add_context_menu_plugin(EditorContextMenuPlugin.CONTEXT_SLOT_SCENE_TREE, _make_object)
 	add_tool_menu_item(_MENU_MAKE_OBJECT, func(): _make_object.make(EditorInterface.get_selection().get_selected_nodes()))
 	add_tool_menu_item(_MENU_TO_BEZIER, _on_convert_bezier_pressed)
+	_effect_tools = EffectToolsScript.new()
+	_effect_tools.undo_redo = get_undo_redo()
+	add_context_menu_plugin(EditorContextMenuPlugin.CONTEXT_SLOT_SCENE_TREE, _effect_tools)
+	add_tool_menu_item(_MENU_EFFECT_SLOTS, _on_convert_effect_slots_pressed)
 	_add_setting(_SETTING_ENGINE, _DEFAULT_ENGINE, PROPERTY_HINT_DIR, "")
 	_add_setting(_SETTING_EXE, "", PROPERTY_HINT_GLOBAL_FILE, "*.exe")
 	_add_setting(_SETTING_PORT, LiveSyncScript.DEFAULT_PORT, PROPERTY_HINT_RANGE, "1024,65535")
@@ -80,6 +91,10 @@ func _exit_tree() -> void:
 	remove_tool_menu_item(_MENU_PREVIEW)
 	remove_tool_menu_item(_MENU_MAKE_OBJECT)
 	remove_tool_menu_item(_MENU_TO_BEZIER)
+	remove_tool_menu_item(_MENU_EFFECT_SLOTS)
+	if _effect_tools != null:
+		remove_context_menu_plugin(_effect_tools)
+		_effect_tools = null
 	if _make_object != null:
 		remove_context_menu_plugin(_make_object)
 		_make_object = null
@@ -127,6 +142,15 @@ func _on_convert_bezier_pressed() -> void:
 			undo.add_undo_method(lib, "add_animation", anim_name, original)
 	undo.commit_action()
 	print("VJ: converted %d value track(s) to Bezier." % count)
+
+
+func _on_convert_effect_slots_pressed() -> void:
+	var root := EditorInterface.get_edited_scene_root()
+	if root == null:
+		push_warning("VJ: no scene open.")
+		return
+	var n: int = _effect_tools.convert_slots(root, SceneExporterScript._find_animation_player(root))
+	print("VJ: moved %d effect slot(s) into VJEffect nodes." % n)
 
 
 func _on_preview_pressed() -> void:

@@ -24,6 +24,8 @@ extends RefCounted
 ##                           reopened at startup.
 ##   live_sync             — follow the authoring editor that started this
 ##                           player (`--live-sync`); no effect otherwise.
+##   fullscreen            — desktop window fills the screen (F11).
+##   show_play_bar         — the desktop bottom media bar (H).
 
 signal changed
 
@@ -83,6 +85,8 @@ var browser_tiles: bool = false: set = _set_browser_tiles
 var browser_sort: String = "name": set = _set_browser_sort
 var browser_last_dir: String = "": set = _set_browser_last_dir
 var live_sync: bool = true: set = _set_live_sync
+var fullscreen: bool = false: set = _set_fullscreen
+var show_play_bar: bool = true: set = _set_show_play_bar
 
 var _path: String = PATH
 var _loading: bool = false
@@ -116,6 +120,8 @@ func from_dict(d: Dictionary) -> void:
 	browser_sort = String(d.get("browser_sort", "name"))
 	browser_last_dir = String(d.get("browser_last_dir", ""))
 	live_sync = bool(d.get("live_sync", true))
+	fullscreen = bool(d.get("fullscreen", false))
+	show_play_bar = bool(d.get("show_play_bar", true))
 	_loading = false
 	changed.emit()
 
@@ -135,6 +141,8 @@ func to_dict() -> Dictionary:
 		"browser_sort": browser_sort,
 		"browser_last_dir": browser_last_dir,
 		"live_sync": live_sync,
+		"fullscreen": fullscreen,
+		"show_play_bar": show_play_bar,
 	}
 
 
@@ -225,6 +233,20 @@ func _set_live_sync(v: bool) -> void:
 	if v == live_sync:
 		return
 	live_sync = v
+	_touch()
+
+
+func _set_fullscreen(v: bool) -> void:
+	if v == fullscreen:
+		return
+	fullscreen = v
+	_touch()
+
+
+func _set_show_play_bar(v: bool) -> void:
+	if v == show_play_bar:
+		return
+	show_play_bar = v
 	_touch()
 
 

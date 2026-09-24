@@ -22,10 +22,20 @@ func _ready() -> void:
 	_pitch = e.x
 
 
+## The release is caught here rather than in _unhandled_input: when it lands
+## on UI (the floating panel, a popup) that UI consumes it, and look mode
+## would never end. Not marked handled so the UI still sees its release.
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT \
+			and not event.pressed and _looking:
+		_stop_looking()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
-		_looking = event.pressed
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if _looking else Input.MOUSE_MODE_VISIBLE
+		if event.pressed:
+			_looking = true
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event is InputEventMouseMotion and _looking:
 		_yaw -= event.relative.x * mouse_sensitivity
 		_pitch -= event.relative.y * mouse_sensitivity
@@ -43,7 +53,16 @@ func set_view(pos: Vector3, rot_deg: Vector3) -> void:
 	rotation = Vector3(_pitch, _yaw, 0.0)
 
 
+func _stop_looking() -> void:
+	_looking = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
 func _process(delta: float) -> void:
+	# Fallback for a release this node never saw at all (e.g. it went to
+	# another window, or focus was lost mid-drag).
+	if _looking and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		_stop_looking()
 	if not current or not movement_enabled:
 		return
 	var input := Vector3.ZERO

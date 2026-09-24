@@ -42,8 +42,15 @@ const CHANNEL_SOURCES := ["audio", "video"]
 const KEY_BLACK := "res://player/visualizer/effects/key_black.gdshader"
 const OVAL_MASK := "res://player/visualizer/effects/oval_mask.gdshader"
 const EDGE_BLUR := "res://player/visualizer/effects/edge_blur.gdshader"
+## Effect uniforms the chain sets itself (see effect_prelude.gdshaderinc),
+## never controls.
+const CHAIN_INPUTS := ["prepass"]
 ## Not an ordinary effect: Screen grows the passes after it (see padding.gdshader).
 const PADDING := "res://player/visualizer/effects/padding.gdshader"
+const GLOW := "res://player/visualizer/effects/glow.gdshader"
+const CROP := "res://player/visualizer/effects/crop.gdshader"
+const ROUNDED_CORNERS := "res://player/visualizer/effects/rounded_corners.gdshader"
+const KEEP_CENTER := "res://player/visualizer/effects/keep_center.gdshader"
 
 const BUILTINS := [
 	{"key": "res://player/visualizer/shaders/light_ring.gdshader", "label": "Light ring"},
@@ -55,6 +62,10 @@ const BUILTIN_EFFECTS := [
 	{"key": OVAL_MASK, "label": "Oval mask"},
 	{"key": EDGE_BLUR, "label": "Edge blur"},
 	{"key": PADDING, "label": "Padding"},
+	{"key": GLOW, "label": "Glow"},
+	{"key": CROP, "label": "Crop"},
+	{"key": ROUNDED_CORNERS, "label": "Rounded corners"},
+	{"key": KEEP_CENTER, "label": "Keep center"},
 ]
 
 ## key -> parse_hints() result; cleared by list_options so edits show up.
@@ -122,6 +133,12 @@ static func is_effect_code(code: String) -> bool:
 	return code.contains("input_tex") or code.contains(EFFECT_PRELUDE)
 
 
+## Whether an effect wants a prepass (it declares `prepass_tex`; see
+## effect_prelude.gdshaderinc and Screen).
+static func has_prepass(shader: Shader) -> bool:
+	return shader != null and shader.code.contains("prepass_tex")
+
+
 ## parse_hints() for the shader at `key` (cached); {} hints if unreadable.
 static func hints_for(key: String) -> Dictionary:
 	if not _hints_cache.has(key):
@@ -153,6 +170,8 @@ static func parse_hints(code: String) -> Dictionary:
 	var range_re := RegEx.create_from_string("hint_range\\s*\\(([^)]*)\\)")
 	for u in uni_re.search_all(code):
 		var type := u.get_string(1)
+		if u.get_string(2) in CHAIN_INPUTS:
+			continue
 		var p := {"name": u.get_string(2), "type": type}
 		var default_src := u.get_string(4).strip_edges()
 		if type == "bool":

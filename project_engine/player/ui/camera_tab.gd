@@ -7,8 +7,8 @@ extends VBoxContainer
 ## end and selected). For a layer the projection dropdown is swapped for
 ## the shader picker, and "Lock to screen" shows; the
 ## shader's hinted uniforms get generated controls under the sliders. Every
-## target has an effect list below that (+ Effect, a picker and − per
-## effect, and each effect's own controls). The distance slider is
+## target has an effect list below that (+ Effect, a picker, ↑ / ↓ and −
+## per effect, and each effect's own controls). The distance slider is
 ## inverted (right = nearer) and holds -distance.
 ##
 ## The preset dropdown loads named presets from PresetStore and Save
@@ -289,6 +289,14 @@ func _add_effect_rows(edited: ScreenSettings, i: int) -> void:
 	picker.select(idx)
 	picker.item_selected.connect(func(k: int): edited.set_effect_shader(i, keys[k]))
 	row.add_child(picker)
+	for move in [[-1, "↑"], [1, "↓"]]:
+		var button := Button.new()
+		button.text = move[1]
+		button.custom_minimum_size.x = 40
+		var to: int = i + move[0]
+		button.disabled = to < 0 or to >= edited.effects.size()
+		button.pressed.connect(func(): edited.move_effect(i, move[0]))
+		row.add_child(button)
 	var remove := Button.new()
 	remove.text = "−"
 	remove.custom_minimum_size.x = 40

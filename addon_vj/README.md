@@ -14,15 +14,16 @@ the player runtime consumes.
   - `vj_scene.gd` — `@tool` script for the scene root; holds meta/media/output-path
     and an optional `preview_image`
   - `vj_viewer.gd` — `VJViewer` camera marking the viewer; its keys become `vr_cut`s
-  - `screen.tscn` + `screen.gd` — video screen with an artist shader in a SubViewport,
-    then up to four effects (`effect_1..4`). In the editor it shows `preview_image`
-    or a three-column test card (no video decoder)
+  - `screen.tscn` + `screen.gd` — video screen with an optional artist shader in a
+    SubViewport, then its effects (`VJEffect` children). A glowing screen is
+    Padding → Glow effects; a split-screen piece is a Crop effect first. In the
+    editor it shows `preview_image` or a three-column test card (no video decoder)
   - `layer.tscn` + `layer.gd` — shader layer (`VJLayer`): a Shadertoy-style shader
     on its own quad, with effects, like the player's Camera tab layers
+  - `effect.gd` — `VJEffect`, one effect pass as a child node of a screen or layer
+  - `effect_tools.gd` — **Add VJ effect** (Scene dock right-click) and
+    **Tools > VJ: Convert effect slots to nodes**
   - `effect_chain.gd` — the editor preview's effect passes (screens and layers)
-  - `screen_glow.gdshader` — the default glow shader used by the screen prefab
-    (`uv_offset` / `uv_scale` pick a sub-rect of the video, for split screens).
-    Keep it identical to `project_engine/player/screen_glow.gdshader`
   - `screen_preview_display.gdshader` — editor-only display pass (curvature bends, opacity)
   - `cube.tscn` — placeholder solid object
 - `modifiers/` — `vj_object.gd` (`VJObject`: the modifier and reactive fields,
@@ -57,10 +58,15 @@ the player runtime consumes.
   local-to-scene). `render_scale`, `curvature`, `vertical_curvature` and
   `opacity` export into `config`. A non-builtin shader is copied to
   `<json dir>/shaders/`.
-- Effects (screens and layers): `effect_1..4` each take a ShaderMaterial whose
-  shader is an effect: one of `visualizer/effects/` (Key black, Oval mask, Edge
-  blur, Padding) or your own (include `visualizer/effect_prelude.gdshaderinc`).
-  They export as `config.effects`, and the Inspector shows each effect's params.
+- Effects (screens and layers): `VJEffect` child nodes (`builtin_prefabs/effect.gd`),
+  run in child order, so drag them to reorder. Right-click a screen or layer →
+  **Add VJ effect ▸** picks one of `visualizer/effects/` (Key black, Oval mask,
+  Edge blur, Padding, Glow, Crop, Rounded corners, Keep center); **Empty** takes your own effect shader (include
+  `visualizer/effect_prelude.gdshaderinc`) in its `material`. The enabled ones
+  export as `config.effects`. Scenes from before effects were nodes have
+  `effect_1..4` slots, which no longer preview or export: run **Tools > VJ:
+  Convert effect slots to nodes** once (undoable). It moves them into nodes
+  named after their shaders and rewrites the tracks.
 - Layers (`layer.tscn`): `shader_material` holds a layer shader, one of
   `visualizer/shaders/` (Light ring, Spectrum bars, Video blur) or your own
   canvas_item shader written the same way. `render_scale` exports as the
@@ -106,7 +112,8 @@ the player runtime consumes.
   - `<node>:<resource>:shader_parameter/<p>` (e.g. `shader_material:…`,
     `material_override:…`) → `shader_param` track, target `<node>.surface`
     (`<node>.layer` on layers)
-  - `<node>:effect_<N>:shader_parameter/<p>` → target `<node>.effect<N-1>`
+  - `<node>/<effect>:material:shader_parameter/<p>` → target `<node>.effect<N>`,
+    N being the effect's place among the node's enabled effects (from 0)
   - `<node>:tint` / `:flash` / `:speed` / `:sort_offset`, and `:opacity` on
     other VJ objects than screens and layers → target `<node>.modifiers`
   - `<node>:spin` / `:pulse` → target `<node>.reactive`

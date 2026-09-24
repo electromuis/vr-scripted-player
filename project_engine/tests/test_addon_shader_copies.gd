@@ -8,7 +8,6 @@ extends RefCounted
 const ADDON_PREFIX := "res://addons/vj_editor/"
 ## player path -> addon path, both relative to their project / addon root.
 const COPIES := {
-	"player/screen_glow.gdshader": "builtin_prefabs/screen_glow.gdshader",
 	"player/visualizer/effect_prelude.gdshaderinc": "visualizer/effect_prelude.gdshaderinc",
 	"player/visualizer/shadertoy_prelude.gdshaderinc": "visualizer/shadertoy_prelude.gdshaderinc",
 	"player/visualizer/shadertoy_main.gdshaderinc": "visualizer/shadertoy_main.gdshaderinc",
@@ -16,6 +15,10 @@ const COPIES := {
 	"player/visualizer/effects/key_black.gdshader": "visualizer/effects/key_black.gdshader",
 	"player/visualizer/effects/oval_mask.gdshader": "visualizer/effects/oval_mask.gdshader",
 	"player/visualizer/effects/padding.gdshader": "visualizer/effects/padding.gdshader",
+	"player/visualizer/effects/glow.gdshader": "visualizer/effects/glow.gdshader",
+	"player/visualizer/effects/crop.gdshader": "visualizer/effects/crop.gdshader",
+	"player/visualizer/effects/rounded_corners.gdshader": "visualizer/effects/rounded_corners.gdshader",
+	"player/visualizer/effects/keep_center.gdshader": "visualizer/effects/keep_center.gdshader",
 	"player/visualizer/shaders/light_ring.gdshader": "visualizer/shaders/light_ring.gdshader",
 	"player/visualizer/shaders/spectrum_bars.gdshader": "visualizer/shaders/spectrum_bars.gdshader",
 	"player/visualizer/shaders/video_blur.gdshader": "visualizer/shaders/video_blur.gdshader",

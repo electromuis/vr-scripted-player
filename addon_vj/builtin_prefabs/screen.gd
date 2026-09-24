@@ -4,20 +4,22 @@ extends "res://addons/vj_editor/modifiers/vj_object.gd"
 
 ## Video screen prefab for the VJ authoring project. Runs an artist shader
 ## over a video texture inside a SubViewport at reduced resolution, then
-## the effects (effect_1..4) in their own passes, then samples the result
-## on a 3D quad. Mirrors the runtime Screen used by the player so what the
-## artist sees in the template project roughly matches what the audience
-## sees.
+## its effects (VJEffect children, effect.gd) in their own passes, then
+## samples the result on a 3D quad. Mirrors the runtime Screen used by the
+## player so what the artist sees in the template project roughly matches
+## what the audience sees.
 ##
 ## There's no video decoder in the authoring project, so the source is a
 ## still: the owning VJScene's `preview_image`, or a generated three-column
 ## test card. The player swaps in the live video via `set_source_texture()`.
+## Without an artist shader the source goes straight to the effects, as in
+## the player; glows, crops and masks are all effects.
 ##
 ## Everything animatable lives on this root node so AnimationPlayer tracks
 ## don't need editable children:
 ##   main_screen:shader_material:shader_parameter/<name>  → shader_param (slot "surface")
 ##   main_screen:curvature / :vertical_curvature / :opacity → shader_param (slot "display")
-##   main_screen:effect_2:shader_parameter/<name>         → shader_param (slot "effect1")
+##   main_screen/<effect>:material:shader_parameter/<name> → shader_param (slot "effect<N>")
 ##
 ## VJLayer (layer.gd) extends this with a layer shader in place of the
 ## artist shader; the _render_size / _input_uniforms / _bind_inputs /
@@ -31,11 +33,21 @@ const _SOURCE_TEX_UNIFORM := "screen_tex"
 const _BASE_RENDER_RES := Vector2i(1920, 1080)
 const _QUAD_ASPECT := 16.0 / 9.0
 const _DISPLAY_SHADER := preload("res://addons/vj_editor/builtin_prefabs/screen_preview_display.gdshader")
+## Stands in for a missing artist shader in the preview (never exported).
+const _PASSTHROUGH_CODE := "shader_type canvas_item;
+uniform sampler2D screen_tex : source_color, filter_linear;
+void fragment() { COLOR = texture(screen_tex, UV); }
+"
 const _EffectChain := preload("res://addons/vj_editor/builtin_prefabs/effect_chain.gd")
-const EFFECT_SLOTS := 4
+const _EffectScript := preload("res://addons/vj_editor/builtin_prefabs/effect.gd")
+## The effect slots scenes used before effects became child nodes. Still
+## loaded and saved (not shown) so Tools > VJ: Convert effect slots to
+## nodes can move them; the preview and export ignore them.
+const LEGACY_EFFECT_SLOTS := ["effect_1", "effect_2", "effect_3", "effect_4"]
 
-## The artist shader. Exported as `config.shader` + `config.shader_params`.
-## Each instance needs its own material (the prefab's is local-to-scene).
+## The artist shader, optional (none shows the video as is). Exported as
+## `config.shader` + `config.shader_params`. Give each instance its own
+## material.
 @export var shader_material: ShaderMaterial:
 	set(value):
 		shader_material = value
@@ -63,29 +75,6 @@ const EFFECT_SLOTS := 4
 		vertical_curvature = clampf(value, 0.0, 1.0)
 		_apply_display()
 
-@export_group("Effects")
-## Effect shaders, run in slot order over the picture: a ShaderMaterial
-## with one of addons/vj_editor/visualizer/effects/ (the player's built-in
-## Key black, Oval mask, Edge blur, Padding) or your own effect shader.
-## Exported as `config.effects`; animate `effect_N:shader_parameter/<p>`
-## for a `<id>.effect<N-1>` track. Empty slots are skipped.
-@export var effect_1: ShaderMaterial:
-	set(value):
-		effect_1 = value
-		_rebuild_effects()
-@export var effect_2: ShaderMaterial:
-	set(value):
-		effect_2 = value
-		_rebuild_effects()
-@export var effect_3: ShaderMaterial:
-	set(value):
-		effect_3 = value
-		_rebuild_effects()
-@export var effect_4: ShaderMaterial:
-	set(value):
-		effect_4 = value
-		_rebuild_effects()
-
 var _display_material: ShaderMaterial
 var _source_texture: Texture2D
 ## What the canvas actually renders with: a private copy of
@@ -95,8 +84,10 @@ var _source_texture: Texture2D
 var _render_material: ShaderMaterial
 var _param_names: Array[StringName] = []
 var _chain: Node  # effect_chain.gd; internal, never saved
+var _legacy_effects: Dictionary = {}  # LEGACY_EFFECT_SLOTS name -> ShaderMaterial
 
 static var _test_card: ImageTexture
+static var _passthrough: Shader
 
 
 func _ready() -> void:
@@ -109,7 +100,7 @@ func _ready() -> void:
 	_display_material.shader = _DISPLAY_SHADER
 	($Mesh as MeshInstance3D).material_override = _display_material
 	_chain = _EffectChain.new()
-	_chain.name = "Effects"
+	_chain.name = "_EffectPasses"
 	add_child(_chain)
 
 	_apply_render_scale()
@@ -120,12 +111,15 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if shader_material != null and _render_material != null:
-		if _render_material.shader != shader_material.shader:
-			_apply_material()
-		else:
-			for p in _param_names:
-				_render_material.set_shader_parameter(p, shader_material.get_shader_parameter(p))
+	var authored: Shader = shader_material.shader if shader_material != null else null
+	var rendered: Shader = _render_material.shader if _render_material != null else null
+	if rendered == _passthrough:
+		rendered = null
+	if rendered != authored:
+		_apply_material()
+	elif authored != null:
+		for p in _param_names:
+			_render_material.set_shader_parameter(p, shader_material.get_shader_parameter(p))
 	if _chain == null:
 		return
 	if not _chain.is_current(effect_materials()):
@@ -157,9 +151,52 @@ func set_shader_material(mat: ShaderMaterial) -> void:
 	shader_material = mat
 
 
-## effect_1..4 in order, empty slots as null.
+## The VJEffect children that take part, in order.
+func effect_nodes() -> Array[Node]:
+	var out: Array[Node] = []
+	for c in get_children():
+		if c.get_script() == _EffectScript and c.is_active():
+			out.append(c)
+	return out
+
+
+## effect_nodes()' materials.
 func effect_materials() -> Array[ShaderMaterial]:
-	return [effect_1, effect_2, effect_3, effect_4]
+	var out: Array[ShaderMaterial] = []
+	for e in effect_nodes():
+		out.append(e.material)
+	return out
+
+
+## The old effect_1..4 values still on this node (slot name -> material).
+func legacy_effects() -> Dictionary:
+	return _legacy_effects
+
+
+func _set(property: StringName, value: Variant) -> bool:
+	if String(property) in LEGACY_EFFECT_SLOTS:
+		if value == null:
+			_legacy_effects.erase(String(property))
+		else:
+			_legacy_effects[String(property)] = value
+		notify_property_list_changed()
+		return true
+	return false
+
+
+func _get(property: StringName) -> Variant:
+	if String(property) in LEGACY_EFFECT_SLOTS:
+		return _legacy_effects.get(String(property))
+	return null
+
+
+func _get_property_list() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for slot in LEGACY_EFFECT_SLOTS:
+		if _legacy_effects.has(slot):
+			out.append({"name": slot, "type": TYPE_OBJECT, "hint": PROPERTY_HINT_RESOURCE_TYPE,
+					"hint_string": "ShaderMaterial", "usage": PROPERTY_USAGE_STORAGE})
+	return out
 
 
 ## Live source (the player's video). Null falls back to the preview still.
@@ -191,13 +228,19 @@ func _apply_material() -> void:
 		return
 	_param_names.clear()
 	_render_material = null
-	if shader_material != null:
+	if shader_material != null and shader_material.shader != null:
 		_render_material = shader_material.duplicate() as ShaderMaterial
-		if shader_material.shader != null:
-			var inputs := _input_uniforms()
-			for u in shader_material.shader.get_shader_uniform_list():
-				if not inputs.has(u.name):
-					_param_names.append(StringName(u.name))
+		var inputs := _input_uniforms()
+		for u in shader_material.shader.get_shader_uniform_list():
+			if not inputs.has(u.name):
+				_param_names.append(StringName(u.name))
+	elif _input_uniforms().has(_SOURCE_TEX_UNIFORM):
+		if _passthrough == null:
+			_passthrough = Shader.new()
+			_passthrough.code = _PASSTHROUGH_CODE
+		_render_material = ShaderMaterial.new()
+		_render_material.shader = _passthrough
+	if _render_material != null:
 		_bind_inputs(_render_material)
 	canvas.material = _render_material
 	_apply_render_scale()

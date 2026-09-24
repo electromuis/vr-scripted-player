@@ -23,7 +23,10 @@ extends RefCounted
 ##       <path>:visible                               → spawn / despawn events
 ##       <path>:<...>:shader_parameter/<name>         → shader_param "<id>.surface"
 ##                                                      ("<id>.layer" on layers)
-##       <path>:effect_<N>:shader_parameter/<name>    → shader_param "<id>.effect<N-1>"
+##       <path>/<effect>:material:shader_parameter/<name>
+##                                                    → shader_param "<id>.effect<N>"
+##         (<effect> a VJEffect child of a screen or layer, N its place
+##         among the enabled ones)
 ##       <path>:curvature / :vertical_curvature / :opacity (screens, layers)
 ##                                                    → shader_param "<id>.display"
 ##       <path>:opacity / :tint / :flash / :speed / :sort_offset (VJObject;
@@ -43,20 +46,15 @@ const VJScreenScript := preload("res://addons/vj_editor/builtin_prefabs/screen.g
 const VJLayerScript := preload("res://addons/vj_editor/builtin_prefabs/layer.gd")
 const VJViewerScript := preload("res://addons/vj_editor/builtin_prefabs/vj_viewer.gd")
 const VJObjectScript := preload("res://addons/vj_editor/modifiers/vj_object.gd")
+const VJEffectScript := preload("res://addons/vj_editor/builtin_prefabs/effect.gd")
 const BezierTracksScript := preload("res://addons/vj_editor/exporter/bezier_tracks.gd")
 
 const _ANIMATION_NAME := "main"
-const _SHADER_KEY_GLOW := "glow"
-const _GLOW_SHADER_ADDON_PATH := "res://addons/vj_editor/builtin_prefabs/screen_glow.gdshader"
-## Where the player looks for the glow shader when it opens the JSON (the
-## player ships its own copy of screen_glow.gdshader).
-const _GLOW_SHADER_PLAYER_PATH := "res://player/screen_glow.gdshader"
 ## The addon's copies of the player's layer / effect shaders and their
 ## includes map to the player's own (same file names under this folder).
 const _VISUALIZER_ADDON_DIR := "res://addons/vj_editor/visualizer/"
 const _VISUALIZER_PLAYER_DIR := "res://player/visualizer/"
 const _SHADER_PARAM_PREFIX := "shader_parameter/"
-const _EFFECT_SLOT_PREFIX := "effect_"
 const _DISPLAY_PROPS := ["curvature", "vertical_curvature", "opacity"]
 ## Bezier tracks are baked to linear keys: samples per second, and how far
 ## (in the property's units) a dropped sample may stray from the line.
@@ -374,7 +372,8 @@ static func _tracks_from_animation(scene: Node, animation: Animation, objects: A
 	for obj in objects:
 		by_path[obj.path] = obj
 
-	var bezier_groups: Dictionary = {}  # property path String -> {obj, path, comps: {component -> track}}
+	# property path String -> {obj, node, effect, path, comps: {component -> track}}
+	var bezier_groups: Dictionary = {}
 	for i in animation.get_track_count():
 		var type := animation.track_get_type(i)
 		if type != Animation.TYPE_VALUE and type != Animation.TYPE_BEZIER:
@@ -384,27 +383,52 @@ static func _tracks_from_animation(scene: Node, animation: Animation, objects: A
 		for n in path.get_name_count():
 			names.append(String(path.get_name(n)))
 		var obj: _Obj = by_path.get("/".join(names))
+		var node: Node = obj.node if obj != null else null
+		var effect := -1
+		if obj == null and names.size() > 1:
+			# A VJEffect under a screen or layer: its params go to the
+			# parent's `effect<N>` slot.
+			obj = by_path.get("/".join(names.slice(0, -1)))
+			node = scene.get_node_or_null(NodePath("/".join(names)))
+			if obj == null or node == null or node.get_script() != VJEffectScript:
+				continue
+			effect = obj.node.call("effect_nodes").find(node) if obj.node.has_method("effect_nodes") else -1
+			if effect < 0:
+				continue  # disabled, or no shader: not exported
 		if obj == null:
 			continue
 		if path.get_subname_count() == 0:
 			push_warning("VJ export: track '%s' must target a property — skipped." % path)
 			continue
 		if type == Animation.TYPE_VALUE:
-			_append_track(out, obj, path, _value_track_keys(animation, i))
+			_route_track(out, obj, effect, path, _value_track_keys(animation, i))
 			continue
 		# Bezier tracks animate one float each; a vector's or colour's
 		# components (`position:x`, `glow_tint:r`) are regrouped into the
 		# property and baked together.
-		var split := BezierTracksScript.split_component(obj.node, path)
+		var split := BezierTracksScript.split_component(node, path)
 		var prop_path: NodePath = split[0]
 		var group: Dictionary = bezier_groups.get(String(prop_path), {})
 		if group.is_empty():
-			group = {"obj": obj, "path": prop_path, "comps": {}}
+			group = {"obj": obj, "node": node, "effect": effect, "path": prop_path, "comps": {}}
 			bezier_groups[String(prop_path)] = group
 		group.comps[split[1]] = i
 	for group in bezier_groups.values():
-		_append_track(out, group.obj, group.path, _bake_bezier(animation, group.obj.node, group.path, group.comps))
+		_route_track(out, group.obj, group.effect, group.path, _bake_bezier(animation, group.node, group.path, group.comps))
 	return out
+
+
+## `effect` >= 0: the track animates that effect (a VJEffect child of
+## `obj`); only its shader params export.
+static func _route_track(out: Array, obj: _Obj, effect: int, path: NodePath, keys: Array) -> void:
+	if effect < 0:
+		_append_track(out, obj, path, keys)
+		return
+	var last := String(path.get_subname(path.get_subname_count() - 1))
+	if String(path.get_subname(0)) != "material" or not last.begins_with(_SHADER_PARAM_PREFIX):
+		push_warning("VJ export: only an effect's material:shader_parameter/<name> animates ('%s') — skipped." % path)
+		return
+	out.append(_shader_param_track(keys, "%s.effect%d" % [obj.id, effect], last.substr(_SHADER_PARAM_PREFIX.length())))
 
 
 ## Routes one animated property of `obj` to its player track. `keys` are
@@ -419,8 +443,6 @@ static func _append_track(out: Array, obj: _Obj, path: NodePath, keys: Array) ->
 	var last := String(path.get_subname(path.get_subname_count() - 1))
 	if last.begins_with(_SHADER_PARAM_PREFIX):
 		var slot := "layer" if obj.node.get_script() == VJLayerScript else "surface"
-		if prop.begins_with(_EFFECT_SLOT_PREFIX) and prop.substr(_EFFECT_SLOT_PREFIX.length()).is_valid_int():
-			slot = "effect%d" % (int(prop.substr(_EFFECT_SLOT_PREFIX.length())) - 1)
 		out.append(_shader_param_track(keys, "%s.%s" % [id, slot], last.substr(_SHADER_PARAM_PREFIX.length())))
 		return
 	match prop:
@@ -526,31 +548,59 @@ static func _bake_bezier(animation: Animation, node: Node, prop_path: NodePath, 
 			var t := t1 if n == steps else t0 + (t1 - t0) * n / steps
 			run.append({"t": t, "value": sample.call(t)})
 		# Greedy: extend the line from the last kept key while every sample
-		# it skips stays on it; keep the sample where it would break.
+		# it skips stays on it; keep the sample where it would break. Each
+		# skipped sample narrows the slopes the line may have (per
+		# component), so checking the next sample is O(1), not a rescan.
 		var i := 0
 		while i < run.size():
+			var a: Dictionary = keys[-1]
+			var a_v := _float_components(a.value)
+			var lo := PackedFloat64Array()
+			var hi := PackedFloat64Array()
+			lo.resize(a_v.size())
+			hi.resize(a_v.size())
+			lo.fill(-INF)
+			hi.fill(INF)
 			var j := i
-			while j + 1 < run.size() and _on_line(keys[-1], run[j + 1], run, i, j + 1):
+			while j + 1 < run.size():
+				_narrow_slopes(lo, hi, a.t, a_v, run[j])
+				if not _slopes_allow(lo, hi, a.t, a_v, run[j + 1]):
+					break
 				j += 1
 			keys.append(run[j])
 			i = j + 1
 	return keys
 
 
-## Whether run[first .. end-1] lie within _BEZIER_BAKE_TOLERANCE of the
-## straight line from `a` to `b`.
-static func _on_line(a: Dictionary, b: Dictionary, run: Array, first: int, end: int) -> bool:
-	for n in range(first, end):
-		var p: Dictionary = run[n]
-		var lerped = lerp(a.value, b.value, (p.t - a.t) / (b.t - a.t))
-		if typeof(lerped) == TYPE_FLOAT:
-			if absf(lerped - p.value) > _BEZIER_BAKE_TOLERANCE:
-				return false
-			continue
-		for c in BezierTracksScript.component_count(lerped):
-			if absf(lerped[c] - p.value[c]) > _BEZIER_BAKE_TOLERANCE:
-				return false
+## Narrows each component's allowed slope range (from anchor time `a_t`,
+## values `a_v`) so a line through the anchor passes within
+## _BEZIER_BAKE_TOLERANCE of sample `p`.
+static func _narrow_slopes(lo: PackedFloat64Array, hi: PackedFloat64Array, a_t: float, a_v: PackedFloat64Array, p: Dictionary) -> void:
+	var dt: float = p.t - a_t
+	var v := _float_components(p.value)
+	for c in a_v.size():
+		lo[c] = maxf(lo[c], (v[c] - _BEZIER_BAKE_TOLERANCE - a_v[c]) / dt)
+		hi[c] = minf(hi[c], (v[c] + _BEZIER_BAKE_TOLERANCE - a_v[c]) / dt)
+
+
+## Whether the line from the anchor to `b` stays inside every slope range.
+static func _slopes_allow(lo: PackedFloat64Array, hi: PackedFloat64Array, a_t: float, a_v: PackedFloat64Array, b: Dictionary) -> bool:
+	var dt: float = b.t - a_t
+	var v := _float_components(b.value)
+	for c in a_v.size():
+		var slope := (v[c] - a_v[c]) / dt
+		if slope < lo[c] or slope > hi[c]:
+			return false
 	return true
+
+
+static func _float_components(value) -> PackedFloat64Array:
+	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
+		return PackedFloat64Array([float(value)])
+	var out := PackedFloat64Array()
+	for c in BezierTracksScript.component_count(value):
+		out.append(value[c])
+	return out
 
 
 ## Every viewer key after t=0 is a cut. With a fade, the event starts half
@@ -661,20 +711,18 @@ static func _look_config(node: Node3D, out_dir: String, shaders: Dictionary) -> 
 	return cfg
 
 
-## effect_1..4 as `config.effects`, keeping empty slots before a used one
-## (as {"shader": ""}) so `effect<N>` track targets line up.
+## The enabled VJEffect children, in order, as `config.effects` (their
+## index is the `effect<N>` track target).
 static func _effects_config(node: Node3D, out_dir: String, shaders: Dictionary) -> Array:
+	if not node.call("legacy_effects").is_empty():
+		push_warning("VJ export: '%s' still has effect_1..4 slots, which no longer export. Run Tools > VJ: Convert effect slots to nodes." % node.name)
 	var out: Array = []
 	for mat in node.call("effect_materials"):
-		var e := {"shader": ""}
-		if mat != null and mat.shader != null:
-			e.shader = _register_shader(mat.shader, out_dir, shaders)
-			var params := _authored_params(mat, ["input_tex", "display_aspect"])
-			if not params.is_empty():
-				e["params"] = params
+		var e := {"shader": _register_shader(mat.shader, out_dir, shaders)}
+		var params := _authored_params(mat, ["input_tex", "display_aspect", "picture_rect", "picture_corners", "prepass_tex", "prepass"])
+		if not params.is_empty():
+			e["params"] = params
 		out.append(e)
-	while not out.is_empty() and out[-1].shader == "":
-		out.pop_back()
 	return out
 
 
@@ -696,15 +744,12 @@ static func _authored_params(mat: ShaderMaterial, skip: Array) -> Dictionary:
 	return params
 
 
-## The addon's glow shader and its copies of the player's layer / effect
-## shaders map to the player's builtin copies; any other shader file is
+## The addon's copies of the player's layer / effect shaders map to the
+## player's builtin copies; any other shader file is
 ## copied to `shaders/` next to the JSON, its includes of the addon's
 ## visualizer files pointed at the player's. Returns the key.
 static func _register_shader(shader: Shader, out_dir: String, shaders: Dictionary) -> String:
 	var src := shader.resource_path
-	if src == _GLOW_SHADER_ADDON_PATH:
-		shaders[_SHADER_KEY_GLOW] = _GLOW_SHADER_PLAYER_PATH
-		return _SHADER_KEY_GLOW
 	if src.is_empty() or src.contains("::"):
 		push_warning("VJ export: built-in (unsaved) shaders aren't supported — save the shader to a .gdshader file.")
 		return ""
@@ -737,7 +782,8 @@ static func _value_to_json(v, with_alpha: bool = false):
 
 
 static func _transform_to_dict(x: Transform3D) -> Dictionary:
-	var euler := x.basis.get_euler()
+	# Orthonormalized: get_euler() on a scaled basis gives wrong angles.
+	var euler := x.basis.orthonormalized().get_euler()
 	return {
 		"position": [x.origin.x, x.origin.y, x.origin.z],
 		"rotation_deg": [rad_to_deg(euler.x), rad_to_deg(euler.y), rad_to_deg(euler.z)],

@@ -13,7 +13,8 @@
     "cube": "res://player/prefabs/cube.tscn"
   },
   "shaders": {
-    "glow": "res://player/screen_glow.gdshader"
+    "padding": "res://player/visualizer/effects/padding.gdshader",
+    "glow": "res://player/visualizer/effects/glow.gdshader"
   },
   "objects": [],
   "tracks": [
@@ -35,42 +36,36 @@
           0.0
         ],
         "scale": [
-          0.300000011920929,
-          0.300000011920929,
-          0.300000011920929
+          0.150000005960464,
+          0.150000005960464,
+          0.150000005960464
         ]
       },
       "config": {
-        "shader": "glow",
-        "shader_params": {
-          "video_uv_bounds": [
-            0.25,
-            0.25,
-            0.75,
-            0.75
-          ],
-          "uv_offset": [
-            0.0,
-            0.0
-          ],
-          "uv_scale": [
-            1.0,
-            1.0
-          ],
-          "glow_intensity": 1.6,
-          "glow_radius": 0.32,
-          "glow_power": 2.0,
-          "glow_tint": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "edge_blur": 0.12,
-          "glow_samples": 12,
-          "inner_glow_strength": 0.55,
-          "inner_glow_width": 0.09
-        },
-        "render_scale": 0.5
+        "render_scale": 0.5,
+        "effects": [
+          {
+            "shader": "padding",
+            "params": {
+              "amount": 1.0
+            }
+          },
+          {
+            "shader": "glow",
+            "params": {
+              "intensity": 1.6,
+              "radius": 0.64,
+              "power": 2.0,
+              "tint": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "inner_strength": 0.55,
+              "inner_width": 0.18
+            }
+          }
+        ]
       }
     },
     {

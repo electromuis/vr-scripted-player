@@ -153,6 +153,20 @@ static func test_builtin_effects(t: TestCase) -> void:
 	t.assert_eq(names, ["outside", "size", "ratio", "blur", "level"])
 	names = VisualizerShaders.hints_for(VisualizerShaders.EDGE_BLUR).params.map(func(p): return p.name)
 	t.assert_eq(names, ["inward", "radius"])
+	names = VisualizerShaders.hints_for(VisualizerShaders.GLOW).params.map(func(p): return p.name)
+	t.assert_eq(names, ["intensity", "radius", "power",
+			"mirror_near", "mirror_far", "mirror_width", "mirror_depth",
+			"repeat_near", "repeat_far", "repeat_width", "repeat_depth",
+			"smear", "rays", "ray_length", "bloom", "saturation", "blur", "border_blur", "soften", "samples",
+			"inner_strength", "inner_width", "edge_blur", "prepass_scale"])
+	t.assert_true(VisualizerShaders.has_prepass(VisualizerShaders.load_shader(VisualizerShaders.GLOW)), "glow has a prepass")
+	t.assert_true(not VisualizerShaders.has_prepass(VisualizerShaders.load_shader(VisualizerShaders.EDGE_BLUR)), "edge blur has none")
+	names = VisualizerShaders.hints_for(VisualizerShaders.CROP).params.map(func(p): return p.name)
+	t.assert_eq(names, ["left", "top", "width", "height"])
+	names = VisualizerShaders.hints_for(VisualizerShaders.ROUNDED_CORNERS).params.map(func(p): return p.name)
+	t.assert_eq(names, ["radius_x", "radius_y", "feather"])
+	names = VisualizerShaders.hints_for(VisualizerShaders.KEEP_CENTER).params.map(func(p): return p.name)
+	t.assert_eq(names, ["zoom", "center", "softness", "horizontal", "vertical"])
 
 
 static func test_list_options_builtins_then_user_files(t: TestCase) -> void:
@@ -217,3 +231,6 @@ static func test_padding_step(t: TestCase) -> void:
 	t.assert_eq(Screen.pass_size(Vector2(8192, 2048)), Vector2i(4096, 1024), "capped at 4096")
 	t.assert_eq(Screen.pad(a, 1.0, Vector2(320, 180), -1.0).h, 1.0, "negative is none")
 	t.assert_eq(VisualizerShaders.hints_for(VisualizerShaders.PADDING).params.map(func(p): return p.name), ["amount"])
+	t.assert_eq(Screen.picture_rect(a, a, 1.0), Vector4(0, 0, 1, 1), "unpadded: the whole pass")
+	var r := Screen.picture_rect(a, g.w, g.h)
+	t.assert_true(r.is_equal_approx(Vector4(0.5 / (a + 1.0), 0.25, a / (a + 1.0), 0.5)), "padded: centred, margin around it")

@@ -3,6 +3,24 @@
 [ext_resource type="Script" path="res://addons/vj_editor/builtin_prefabs/vj_scene.gd" id="1_vjscene"]
 [ext_resource type="PackedScene" path="res://addons/vj_editor/builtin_prefabs/screen.tscn" id="2_screen"]
 [ext_resource type="PackedScene" path="res://addons/vj_editor/builtin_prefabs/cube.tscn" id="3_cube"]
+[ext_resource type="Script" path="res://addons/vj_editor/builtin_prefabs/effect.gd" id="4_effect"]
+[ext_resource type="Shader" path="res://addons/vj_editor/visualizer/effects/padding.gdshader" id="5_padding"]
+[ext_resource type="Shader" path="res://addons/vj_editor/visualizer/effects/glow.gdshader" id="6_glow"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_padding"]
+resource_local_to_scene = true
+shader = ExtResource("5_padding")
+shader_parameter/amount = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_glow"]
+resource_local_to_scene = true
+shader = ExtResource("6_glow")
+shader_parameter/intensity = 1.6
+shader_parameter/radius = 0.64
+shader_parameter/power = 2.0
+shader_parameter/tint = Color(1, 1, 1, 1)
+shader_parameter/inner_strength = 0.55
+shader_parameter/inner_width = 0.18
 
 [sub_resource type="Animation" id="Animation_main"]
 resource_name = "main"
@@ -107,9 +125,17 @@ transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 15)
 
 [node name="main_screen" parent="." instance=ExtResource("2_screen")]
-transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 2, 0)
+transform = Transform3D(0.15, 0, 0, 0, 0.15, 0, 0, 0, 0.15, 0, 2, 0)
 render_scale = 0.5
 metadata/vj_prefab = "screen"
+
+[node name="padding" type="Node" parent="main_screen"]
+script = ExtResource("4_effect")
+material = SubResource("ShaderMaterial_padding")
+
+[node name="glow" type="Node" parent="main_screen"]
+script = ExtResource("4_effect")
+material = SubResource("ShaderMaterial_glow")
 
 [node name="cube_1" parent="." instance=ExtResource("3_cube")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 1, 0)

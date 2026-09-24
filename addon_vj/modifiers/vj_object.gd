@@ -69,6 +69,9 @@ static var lookup := func(node: Node) -> Dictionary:
 
 var _reactive_state := {}
 var _anim: AnimationPlayer
+## Between the editor's pre- and post-save notifications. Godot applies the
+## RESET animation after pre-save; modifiers written then would be saved.
+var _saving := false
 
 
 ## The modifiers this object applies to what's under it.
@@ -89,8 +92,10 @@ func _exit_tree() -> void:
 func _notification(what: int) -> void:
 	# Never save modified values into the scene.
 	if what == NOTIFICATION_EDITOR_PRE_SAVE:
+		_saving = true
 		Mods.restore(self)
 	elif what == NOTIFICATION_EDITOR_POST_SAVE:
+		_saving = false
 		_refresh_modifiers()
 
 
@@ -100,7 +105,7 @@ func _opacity_changed() -> void:
 
 
 func _refresh_modifiers() -> void:
-	if is_inside_tree():
+	if is_inside_tree() and not _saving:
 		Mods.refresh(self, lookup)
 
 

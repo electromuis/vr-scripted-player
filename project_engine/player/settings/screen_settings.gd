@@ -109,6 +109,19 @@ func remove_effect(index: int) -> void:
 	changed.emit()
 
 
+## Move effect `index` by `step` places (-1 = up, runs earlier). No-op at
+## the ends of the list.
+func move_effect(index: int, step: int) -> void:
+	var to := index + step
+	if index < 0 or index >= effects.size() or to < 0 or to >= effects.size() or step == 0:
+		return
+	var effect: Dictionary = effects[index]
+	effects.remove_at(index)
+	effects.insert(to, effect)
+	structure_changed.emit()
+	changed.emit()
+
+
 ## Re-pick effect `index`'s shader; its params go back to the defaults.
 func set_effect_shader(index: int, key: String) -> void:
 	if index < 0 or index >= effects.size() or effects[index].shader == key:

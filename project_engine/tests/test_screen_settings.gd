@@ -104,6 +104,26 @@ static func test_effect_edits_signal(t: TestCase) -> void:
 	t.assert_true(s.effects.is_empty())
 
 
+static func test_move_effect(t: TestCase) -> void:
+	var s := ScreenSettings.new()
+	s.add_effect(VisualizerShaders.PADDING)
+	s.add_effect(VisualizerShaders.GLOW)
+	s.add_effect(VisualizerShaders.KEY_BLACK)
+	s.set_effect_param(1, "intensity", 2.0)
+	var counts := {"structure": 0}
+	s.structure_changed.connect(func(): counts.structure += 1)
+	s.move_effect(1, -1)
+	t.assert_eq(s.effects.map(func(e): return e.shader),
+			[VisualizerShaders.GLOW, VisualizerShaders.PADDING, VisualizerShaders.KEY_BLACK])
+	t.assert_eq(s.effects[0].params.intensity, 2.0, "params move with their effect")
+	s.move_effect(0, 1)
+	s.move_effect(1, 1)
+	t.assert_eq(s.effects[2].shader, VisualizerShaders.GLOW)
+	s.move_effect(2, 1)
+	s.move_effect(0, -1)
+	t.assert_eq(counts.structure, 3, "moves past either end do nothing")
+
+
 static func test_legacy_mask_becomes_oval_effect(t: TestCase) -> void:
 	var s := ScreenSettings.new()
 	s.from_dict({"mask": {"enabled": true, "outside": false, "feather": 0.3, "level": 1}})

@@ -19,6 +19,8 @@ var _volume: HSlider
 var _volume_value: Label
 var _end_action: OptionButton
 var _live_sync: CheckButton
+var _fullscreen: CheckButton
+var _play_bar: CheckButton
 
 
 func _ready() -> void:
@@ -57,6 +59,18 @@ func _ready() -> void:
 	_fps.toggled.connect(func(on: bool):
 		_apply_ui(func(): _settings.show_fps = on))
 	_row("FPS", _fps)
+
+	_fullscreen = CheckButton.new()
+	_fullscreen.text = "Fill the screen (F11)"
+	_fullscreen.toggled.connect(func(on: bool):
+		_apply_ui(func(): _settings.fullscreen = on))
+	_row("Fullscreen", _fullscreen)
+
+	_play_bar = CheckButton.new()
+	_play_bar.text = "Show the desktop play bar (H)"
+	_play_bar.toggled.connect(func(on: bool):
+		_apply_ui(func(): _settings.show_play_bar = on))
+	_row("Play bar", _play_bar)
 
 	_volume = HSlider.new()
 	_volume.min_value = 0.0
@@ -128,6 +142,8 @@ func _refresh() -> void:
 	_volume_value.text = "%d%%" % roundi(_settings.volume * 100.0)
 	_end_action.select(PlayerSettings.END_ACTIONS.find(_settings.end_action))
 	_live_sync.button_pressed = _settings.live_sync
+	_fullscreen.button_pressed = _settings.fullscreen
+	_play_bar.button_pressed = _settings.show_play_bar
 	_refreshing = false
 
 
