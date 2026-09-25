@@ -34,6 +34,24 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
 - **Fullscreen / play bar:** **F11** toggles fullscreen and **H** hides or shows the bottom play bar on the desktop window. Both are also in **F2 → Config**, and they stay set the next time you open the player.
 - **Timecode:** a Whirligig-compatible server runs on `127.0.0.1:2000` for MultiFunPlayer / ScriptPlayer. `--whirligig-port N` changes it (0 = off), `--whirligig-lan` accepts other machines.
 
+## Builds and releases (CI)
+
+`.github/workflows/build.yml` runs on every push and pull request:
+
+1. **gde_gozen:** builds FFmpeg + gde_gozen (debug and release) for Linux x86_64, Windows x86_64, macOS arm64 + x86_64 and Android arm64 (Quest 3). The source is `GOZEN_REPO` @ `GOZEN_REF`, plus any patches in `ci/gde_gozen/patches/` (see the README there for our audio loading fix). Builds are cached per commit + patches, so only the first run pays the ~30 min FFmpeg build.
+2. **Tests:** imports the project with Godot 4.7.2, checks gde_gozen loads (`tests/check_extensions.gd`), runs `tests/run.gd`.
+3. **Export and package:** exports with `project_engine/export_presets.cfg` and uploads one artifact holding:
+   - Windows: `-setup.exe` installer and a portable `.zip`
+   - Linux: `.deb` and a portable `.tar.gz`
+   - macOS: universal `.app` in a `.zip` (ad-hoc signed, not notarized: right-click → Open the first time)
+   - Quest 3: `.apk` (sideload with `adb install` or SideQuest; Meta OpenXR vendors plugin)
+   - `-portable-all-platforms.zip` with all of the above unpacked
+4. **Release:** pushing a tag `v*` (`git tag v0.2.0 && git push origin v0.2.0`) creates a GitHub release with those files, and the commit messages since the previous tag as its notes. Tags with a `-` (`v0.2.0-beta`) are marked pre-release.
+
+The Quest APK is signed with the `ANDROID_KEYSTORE_BASE64` (base64 of the `.keystore`), `ANDROID_KEYSTORE_USER` (key alias) and `ANDROID_KEYSTORE_PASSWORD` repository secrets. Without them CI signs it with a throwaway key, and each build then has to be uninstalled before the next one installs.
+
+The helper scripts in `ci/` work locally too: `ci/setup_godot.sh --templates`, `ci/fetch_addons.sh [--android]`, `ci/build_gozen.sh <platform> <arch>`, `ci/package.sh <version>`.
+
 ## Prerequisites
 
 - Godot 4.4 stable (Windows binary at `C:\ProgramData\chocolatey\lib\godot\tools\Godot_v4.4-stable_win64.exe` in this dev environment)
