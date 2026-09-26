@@ -2,7 +2,7 @@
 
 Plan for a VR editor ("Studio") for VJ scripts: build and perform a piece from inside the headset. This records the decisions made so far, what's done, and the design and milestones for what comes next, so work can resume in a fresh session. The design is under *Studio design*.
 
-Branch: `claude/sweet-bardeen-mjgzvk` (commits `8a44787`, `04f3be3`, `38e8d22` on top of `89d4579`).
+Branch: `claude/sweet-bardeen-mjgzvk`.
 
 ## Decisions
 
@@ -54,6 +54,15 @@ Rejected alternatives, and why:
   - All pass, including a hand-written fixture that covers every conversion.
   - I broke the importer on purpose to confirm the test catches it.
   - Forest tunnel imported, saved to `.tscn`, reloaded and exported with 0 differences from the original.
+
+### Controls and remapping in the player (milestone IN)
+- **Commands, contexts, bindings:** `player/input/input_bindings.gd` has the 18 player commands, the contexts (menus > free > locked > play; the highest active context that uses an input owns it, a stick counting as one input), and default bindings that reproduce the player's old hard-coded buttons exactly. Only the user's changes are saved (`user://input_bindings.json`); changes for commands a version doesn't know are kept.
+- **Router:** `player/input/input_router.gd` polls the controllers (Godot's generic OpenXR actions, analog trigger / grip with hysteresis) and takes keys from `_unhandled_input`. It handles press / hold / double press, chords (a held modifier), stick flicks with rearm, and axis commands (walk, turn, scroll). Rebinding captures the next press; presses in its first 0.2 s are ignored, because in VR the trigger that clicked "+" can arrive just after the click.
+- **Player wired onto it:** `xr_rig.gd` no longer interprets buttons (it only sets the "menus" context while the laser is on a panel), `xr_movement.gd` reads the router's axes, and `main.gd` handles commands. The `toggle_vr` / `toggle_panel` InputMap actions are gone (F1 / F2 are bindings now).
+- **Controls tab** (F2 → Controls): commands grouped by when they apply, a chip per binding (its menu: press / hold / double, remove), **+** to capture, per-command ↺, Left-handed and Reset all (both need a second press). Taking an input moves it from the command that had it, and says so; clashes show in red.
+- **Tests:** `tests/test_input.gd` (14 tests) covers the defaults, contexts, gestures, chords, flicks, keys, capture, conflicts, saving and left-handed.
+- **Checked beyond the tests:** the real main scene booted with every command fired and keys pushed through `_unhandled_input`, and the Controls tab rebound a command end to end; screenshots rendered under Xvfb (`docs/player/controls_tab.png`). **Not yet tried on a headset.**
+- **Left for later:** the controller picture from the mockup (pointing at a button shows what it does), saving your own named profiles, and Studio's own contexts (M2).
 
 ## Studio design
 
@@ -141,6 +150,7 @@ Both apps get a **Controls** screen where every command can be rebound, for the 
 
 ![Controls screen: commands for Play mode with their bindings, one row waiting for a button press, and the two Quest 3 controllers with the bound buttons lit](docs/studio/controls.svg)
 
+- **Each app has its own commands.** Studio always works on one piece with one video, so it has no playlist commands (next / previous video, "at video end: next"); opening a different piece is a menu action, not a button.
 - **Commands, not buttons.** Everything the apps do becomes a named command ("Play / pause", "Seek +10 s", "Key selection", "Undo", "Toggle Camera FX", …) with a context:
   - *Play*, *Edit* (Studio) and *Menus* (while the pointer is on a panel)
   - the same button can do different things per context, which is how Right A is play/pause in Play and "key selection" in Edit
@@ -324,7 +334,7 @@ Each ends in something usable, with a clear "done when".
 | M7 | **Motion paths + viewer animation + miniature view**: format v3 viewer track, key viewer here, ride recording, comfort warnings, "cuts only" setting | Record a ride through the tunnel, preview it from the seat, and it plays back smooth in the player (and as fades with "cuts only") |
 | M8 | **Polish**: haptics, comfort, visual pass, left-handed mode, looks/presets | A first-time user can place, key and play back a screen in 10 minutes unaided |
 
-| IN | **Controls and remapping** in the *player*: commands, input router, Controls tab, profiles, keyboard; `xr_rig` / `xr_movement` moved onto it | Rebind play/pause to X on a Quest 3, the default profile still behaves exactly as today, and all binding tests pass. Studio adds its Edit context from M2 on |
+| IN ✅ | **Controls and remapping** in the *player*: commands, input router, Controls tab, profiles, keyboard; `xr_rig` / `xr_movement` moved onto it | Rebind play/pause to X on a Quest 3, the default profile still behaves exactly as today, and all binding tests pass. Studio adds its Edit context from M2 on |
 | FX | **Camera shaders** in the *player* (not Studio): camera quad + prelude + built-ins, Camera FX in the Camera tab and presets, format `camera` block, user limits | A kaleidoscope reacts to the bass on a plain video in the headset, the same in both eyes; strength keys in a script fade it in and out |
 
 M1–M3 are the smallest thing that's already better than the desktop for layout. M6 is the feature that makes Studio worth opening.
@@ -346,7 +356,7 @@ M1–M3 are the smallest thing that's already better than the desktop for layout
 - **Should Studio also open plain videos**, to start a new piece from a video file (create `clip.json` next to it)? I'd say yes. It's the natural "new piece" flow.
 
 ## Known issues
-- All 137 player tests pass, as does the round-trip test.
+- All 151 player tests pass, as does the round-trip test.
 - `scripts/forest_tunnel/video.json` is still a v1 export (bezier tracks baked to linear keys, within 0.001 of the curves). Its events match the current scene; re-export from the editor for the exact curves and format v2.
 - `scripts/minimal` has no objects, so the exporter refuses it (by design). The round-trip test skips it.
 
@@ -354,6 +364,9 @@ M1–M3 are the smallest thing that's already better than the desktop for layout
 - **No Godot preinstalled.** Download the project's version (4.7.1):
   `curl -sSL -o g.zip https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip && unzip g.zip`
   Godot 4.4 silently drops parts of 4.7-saved scenes (`libraries/ =`, `unique_id=`); don't use it.
-- **Player tests:** `cd project_engine && godot --headless --import && godot --headless --script res://tests/run.gd`. The XR Tools and gde_gozen errors in the output are expected (not installed here).
+- **Player tests:** `cd project_engine && godot --headless --import && godot --headless --script res://tests/run.gd`.
+- **XR Tools** isn't in the repo; without it, anything touching the XR rig doesn't compile and those tests pass without checking much. Install 4.5.1 into `project_engine/addons/godot-xr-tools/` (gitignored) from `https://github.com/GodotVR/godot-xr-tools/releases/download/4.5.1/godot-xr-tools.zip`. Under Godot 4.7 its `objects/viewport_2d_in_3d.gd` fails to parse: add `return null` at the end of `_property_get_revert` in the local copy.
+- **gde_gozen has no Linux binary here**, so `main.gd` doesn't compile in the container. To run the real main scene, copy `project_engine` to the scratchpad and replace `GoZenVideo.new()` / `AudioStreamFFmpeg.new()` (in `player/video_bridge.gd` and `addons/gde_gozen/video_playback.gd`) with `ClassDB.instantiate(...)` and drop those type hints. Then a `SceneTree` script can instantiate `res://player/main.tscn` and drive it.
+- **Screenshots:** Xvfb and Mesa are installed. `xvfb-run -a -s "-screen 0 1600x1000x24" godot --rendering-method gl_compatibility --rendering-driver opengl3 --script <script>` renders for real; a panel's viewport only redraws while the panel is shown (`floating_panel.toggle()`).
 - **Round-trip test:** link the addon into an authoring project first (gitignored, like your Windows junctions): `ln -sfn ../../addon_vj project_script_example/addons/vj_editor`. Then `cd project_script_example && godot --headless --import && godot --headless --script res://addons/vj_editor/tests/run_roundtrip.gd`.
 - **Stray `.import` edits:** headless `--import` rewrites a few `.import` files (gde_gozen icons, `effect_icon.svg.import`). Revert them with `git checkout` before committing. `.uid` files and `.godot/` are gitignored.

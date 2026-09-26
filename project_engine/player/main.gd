@@ -33,6 +33,7 @@ var _pending_start: float = 0.0
 var _cli_whirligig_port: int = WhirligigServer.DEFAULT_PORT
 var _cli_whirligig_bind: String = "127.0.0.1"
 var _whirligig: WhirligigServer
+var _router: InputRouter
 var _live_sync: LiveSyncClient
 var _preset_store: PresetStore
 var _screen_settings: ScreenSettings
@@ -95,16 +96,8 @@ func _ready() -> void:
 	runner.event_fired.connect(_on_event_fired)
 
 	vr_button.pressed.connect(_on_vr_button)
-	xr_rig.menu_button_pressed.connect(floating_panel.toggle)
-	xr_rig.right_stick_clicked.connect(_on_right_stick_clicked)
-	xr_rig.grab_started.connect(func(): floating_panel.begin_drag(xr_rig.right_controller))
-	xr_rig.grab_ended.connect(floating_panel.end_drag)
-	xr_rig.play_pause_pressed.connect(_toggle_play)
-	xr_rig.next_pressed.connect(play_next)
-	xr_rig.trigger_pressed.connect(_on_right_trigger)
+	_init_input()
 	xr_rig.movement.scroll_step.connect(xr_rig.scroll_pointed_panel)
-	xr_rig.movement.seek_step.connect(func(dir: int): _seek_by(dir * SEEK_STEP_SECONDS))
-	xr_rig.movement.volume_step.connect(func(dir: int): _change_volume(dir * VOLUME_STEP))
 	get_window().files_dropped.connect(_on_files_dropped)
 	_update_mode_label()
 	_init_media_controls()
@@ -150,40 +143,46 @@ func _process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("toggle_vr"):
-		_on_vr_button()
-	elif event.is_action_pressed("toggle_panel"):
-		floating_panel.toggle()
-	elif event is InputEventKey and event.pressed and not event.echo:
-		_on_media_key(event.keycode)
+	if event is InputEventKey and _router.handle_key(event):
+		get_viewport().set_input_as_handled()
 
 
-## Desktop media keys. Space is also the fly-up key, so it only toggles
-## playback while movement is locked.
-func _on_media_key(keycode: Key) -> void:
-	var locked := _player_settings.locomotion == PlayerSettings.Locomotion.LOCKED
-	match keycode:
-		KEY_R, KEY_HOME:
-			reset_view()
-		KEY_LEFT:
-			_seek_by(-SEEK_STEP_SECONDS)
-		KEY_RIGHT:
-			_seek_by(SEEK_STEP_SECONDS)
-		KEY_UP:
-			_change_volume(VOLUME_STEP)
-		KEY_DOWN:
-			_change_volume(-VOLUME_STEP)
-		KEY_F11:
-			_player_settings.fullscreen = not _player_settings.fullscreen
-		KEY_H:
-			_player_settings.show_play_bar = not _player_settings.show_play_bar
-		KEY_SPACE, KEY_K:
-			if not locked and keycode == KEY_SPACE:
-				return
-			_toggle_play()
-		_:
-			return
-	get_viewport().set_input_as_handled()
+## Controller buttons, sticks and keys all arrive as commands (InputRouter,
+## with the user's bindings from the Controls tab).
+func _init_input() -> void:
+	_router = InputRouter.new(InputBindings.new())
+	_router.name = "InputRouter"
+	# Before XRMovement reads its axes in the same frame.
+	_router.process_priority = -10
+	add_child(_router)
+	xr_rig.router = _router
+	_router.command.connect(_on_command)
+	_router.command_released.connect(_on_command_released)
+
+
+func _on_command(id: StringName) -> void:
+	match id:
+		&"play_pause": _toggle_play()
+		&"screen_trigger": _on_right_trigger()
+		&"screen_click": _on_right_stick_clicked()
+		&"seek_back": _seek_by(-SEEK_STEP_SECONDS)
+		&"seek_forward": _seek_by(SEEK_STEP_SECONDS)
+		&"volume_up": _change_volume(VOLUME_STEP)
+		&"volume_down": _change_volume(-VOLUME_STEP)
+		&"next_video": play_next()
+		&"previous_video": play_previous()
+		&"toggle_menu": floating_panel.toggle()
+		&"drag_menu":
+			floating_panel.begin_drag(xr_rig.left_controller if _router.last_input.begins_with("L.") else xr_rig.right_controller)
+		&"reset_view": reset_view()
+		&"toggle_vr": _on_vr_button()
+		&"fullscreen": _player_settings.fullscreen = not _player_settings.fullscreen
+		&"toggle_play_bar": _player_settings.show_play_bar = not _player_settings.show_play_bar
+
+
+func _on_command_released(id: StringName) -> void:
+	if id == &"drag_menu":
+		floating_panel.end_drag()
 
 
 ## Open a script (.json) or a video. A video with a same-name .json next to
@@ -274,8 +273,8 @@ func _toggle_play() -> void:
 		runner.play()
 
 
-## Right thumbstick click: play/pause while aiming at the screen, reset view
-## otherwise.
+## `screen_click` (right stick click by default): play/pause while aiming at
+## the screen, reset view otherwise.
 func _on_right_stick_clicked() -> void:
 	if _aiming_at_screen():
 		_toggle_play()
@@ -283,7 +282,8 @@ func _on_right_stick_clicked() -> void:
 		reset_view()
 
 
-## Right trigger (not on a panel): play/pause while aiming at the screen.
+## `screen_trigger` (right trigger, not on a panel): play/pause while aiming
+## at the screen.
 func _on_right_trigger() -> void:
 	if _aiming_at_screen():
 		_toggle_play()
@@ -630,7 +630,10 @@ func _init_player_settings() -> void:
 
 func _apply_player_settings() -> void:
 	var locked := _player_settings.locomotion == PlayerSettings.Locomotion.LOCKED
-	xr_rig.movement.locked = locked
+	# Free movement's bindings (walk, turn) take the sticks from the media
+	# remote's; with it locked, Space plays / pauses instead of flying up.
+	_router.set_context("locked", locked)
+	_router.set_context("free", not locked)
 	desktop_camera.movement_enabled = not locked
 	floor_mesh.visible = _player_settings.show_floor
 	_apply_window_settings()
@@ -776,6 +779,8 @@ func _bind_panel_content() -> void:
 	# before bind_files opens its first folder.
 	if content.has_method("bind_config"):
 		content.bind_config(_player_settings)
+	if content.has_method("bind_controls"):
+		content.bind_controls(_router)
 	if content.has_method("bind_files"):
 		content.bind_files(runner, func(path: String, playlist: Playlist = null):
 			_close_panel_after_pick()

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://cvjfpanel00001"]
+[gd_scene load_steps=9 format=3 uid="uid://cvjfpanel00001"]
 
 [ext_resource type="Script" path="res://player/ui/floating_panel_content.gd" id="1_root"]
 [ext_resource type="Script" path="res://player/ui/camera_tab.gd" id="2_camera"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://player/ui/config_tab.gd" id="4_config"]
 [ext_resource type="Script" path="res://player/ui/network_tab.gd" id="5_network"]
 [ext_resource type="Script" path="res://player/ui/presets_tab.gd" id="6_presets"]
+[ext_resource type="Script" path="res://player/ui/controls_tab.gd" id="7_controls"]
 
 [sub_resource type="StyleBoxFlat" id="Bg"]
 bg_color = Color(0.08, 0.08, 0.11, 0.92)
@@ -554,3 +555,21 @@ layout_mode = 2
 custom_minimum_size = Vector2(44, 0)
 tooltip_text = "Close menu"
 text = "X"
+
+[node name="Controls" type="MarginContainer" parent="Tabs"]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Scroll" type="ScrollContainer" parent="Tabs/Controls"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="ControlsTab" type="VBoxContainer" parent="Tabs/Controls/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("7_controls")

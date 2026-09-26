@@ -3,9 +3,14 @@ extends XROrigin3D
 
 ## The VR-side counterpart to the desktop camera. Owns an XRCamera3D, two
 ## XRController3D, a wrist HUD on the left controller, an XRToolsFunctionPointer
-## on the right controller (whose grip drags the floating panel), and a black
-## fade quad parented to the camera for in-headset fade_to_black transitions
-## (the CanvasLayer FadeOverlay only renders to the desktop mirror).
+## on the right controller, and a black fade quad parented to the camera for
+## in-headset fade_to_black transitions (the CanvasLayer FadeOverlay only
+## renders to the desktop mirror).
+##
+## Buttons and sticks mean nothing here: InputRouter (see `router`) turns
+## them into commands from the user's bindings. The rig tells it when the
+## laser is on a panel (the "menus" context: the right stick scrolls, the
+## trigger clicks).
 ##
 ## The rig is added to the scene tree but stays hidden until VR is entered.
 ## main.gd owns lifecycle (show/hide, wiring the wrist HUD to the runner,
@@ -13,25 +18,19 @@ extends XROrigin3D
 
 ## Debug: log every controller button press to stdout so it's easy to
 ## verify which action names the current headset's interaction profile is
-## sending. Turn off once wiring is settled.
+## sending (what they do is up to InputRouter). Turn off once wiring is
+## settled.
 const DEBUG_LOG_BUTTONS := true
 
-signal menu_button_pressed  ## Either controller's menu — toggles floating panel.
-## Right thumbstick click. main.gd picks the meaning: play/pause while aiming
-## at the screen, reset view otherwise.
-signal right_stick_clicked
-signal play_pause_pressed   ## Right A button.
-signal next_pressed         ## Right B button — next video in the playlist.
-## Right trigger while the laser isn't on a UI panel (the pointer owns trigger
-## presses on panels). main.gd toggles playback if it's aimed at the screen.
-signal trigger_pressed
-signal grab_started         ## Right grip squeezed (moves the floating panel).
-signal grab_ended           ## Right grip released.
-
-## Grip is analog on most controllers; hysteresis so a half squeeze doesn't
-## flicker the grab on and off.
-const GRIP_ON := 0.6
-const GRIP_OFF := 0.35
+## Polls these controllers; set by main.gd.
+var router: InputRouter:
+	set(value):
+		router = value
+		if router != null:
+			router.left = left_controller
+			router.right = right_controller
+		if movement != null:
+			movement.router = router
 
 @onready var xr_camera: XRCamera3D = $XRCamera3D
 @onready var left_controller: XRController3D = $LeftController
@@ -42,7 +41,6 @@ const GRIP_OFF := 0.35
 @onready var pointer: XRToolsFunctionPointer = $RightController/FunctionPointer
 
 var _fade_material: StandardMaterial3D
-var _grabbing: bool = false
 
 
 func _ready() -> void:
@@ -59,17 +57,9 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	# Profiles without an analog grip only report grip_click.
-	var grip := maxf(right_controller.get_float("grip"),
-			1.0 if right_controller.is_button_pressed("grip_click") else 0.0)
-	if not _grabbing and grip > GRIP_ON:
-		_grabbing = true
-		grab_started.emit()
-	elif _grabbing and grip < GRIP_OFF:
-		_grabbing = false
-		grab_ended.emit()
-	# Right stick scrolls whatever panel the laser is on.
-	movement.right_scrolls = pointer_panel_body() != null
+	# While the laser is on a panel its bindings (scroll, click) come first.
+	if router != null:
+		router.set_context("menus", pointer_panel_body() != null)
 
 
 ## The panel body (XRToolsViewport2DIn3D's StaticBody3D) the right laser is
@@ -192,16 +182,6 @@ func set_view(pos: Vector3, rot_deg: Vector3) -> void:
 func _on_button_pressed(action: String, hand: String) -> void:
 	if DEBUG_LOG_BUTTONS:
 		print("[XRRig] %s button_pressed: %s" % [hand, action])
-	if action == "menu_button":
-		menu_button_pressed.emit()
-	elif hand == "R" and action == "primary_click":
-		right_stick_clicked.emit()
-	elif hand == "R" and action == "ax_button":
-		play_pause_pressed.emit()
-	elif hand == "R" and action == "by_button":
-		next_pressed.emit()
-	elif hand == "R" and action == "trigger_click" and pointer_panel_body() == null:
-		trigger_pressed.emit()
 
 
 func _set_fade_alpha(a: float) -> void:

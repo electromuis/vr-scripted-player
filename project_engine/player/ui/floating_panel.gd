@@ -2,8 +2,9 @@ class_name FloatingPanel
 extends Node3D
 
 ## World-space UI panel with tabs (Camera / Files / Config / Presets).
-## Toggled with `toggle_panel` action. On show, positions itself in front of
-## the active camera at `distance_m`, facing the viewer. Both desktop mouse
+## Toggled with the `toggle_menu` command (F2 / ≡ by default). On show,
+## positions itself in front of the active camera at `distance_m`, facing
+## the viewer. Both desktop mouse
 ## (via camera raycast → viewport push_input) and VR controllers (via
 ## XRToolsFunctionPointer, wired in Phase 4b) drive the same Control tree.
 ## In VR, holding the right grip drags it (begin_drag / end_drag).

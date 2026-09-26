@@ -1,8 +1,8 @@
 extends PanelContainer
 
 ## Root of the F2 floating panel's tab contents. Forwards binds to the
-## individual tab scripts (Camera, Files, Network, Config, Presets) and owns
-## the header's close (X) and Quit buttons.
+## individual tab scripts (Camera, Files, Network, Config, Presets,
+## Controls) and owns the header's close (X) and Quit buttons.
 
 signal close_requested
 signal quit_requested
@@ -16,6 +16,7 @@ const QUIT_CONFIRM_SECONDS := 3.0
 @onready var network_tab: Node = %NetworkTab
 @onready var config_tab: Node = %ConfigTab
 @onready var presets_tab: Node = %PresetsTab
+@onready var controls_tab: Node = %ControlsTab
 @onready var close_button: Button = %CloseButton
 @onready var quit_button: Button = %QuitButton
 
@@ -72,3 +73,8 @@ func bind_config(settings: PlayerSettings) -> void:
 	for tab in [files_tab, network_tab]:
 		if tab != null and tab.has_method("bind_view"):
 			tab.bind_view(settings)
+
+
+func bind_controls(router: InputRouter) -> void:
+	if controls_tab != null and controls_tab.has_method("bind"):
+		controls_tab.bind(router)
