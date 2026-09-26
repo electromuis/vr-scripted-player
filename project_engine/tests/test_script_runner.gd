@@ -146,6 +146,32 @@ static func test_seek_resets_event_cursor(tc: TestCase) -> void:
 	stage.queue_free()
 
 
+static func test_cut_in_effect_at_the_playhead(tc: TestCase) -> void:
+	var pair := _make_runner_with_stage()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var start := {"type": "event", "t": 0.0, "action": "vr_cut", "to": {"position": [0, 2, 3]}}
+	var cut := {"type": "event", "t": 4.0, "action": "vr_cut", "to": {"position": [5, 2, 0]}}
+	var tele := {"type": "event", "t": 9.0, "action": "vr_teleport", "to": {"position": [1, 1, 1]}}
+	var data := _timeline_from({"tracks": [
+		tele,
+		{"type": "event", "t": 6.0, "action": "despawn", "target": "a"},
+		cut,
+		start,
+	]})
+	runner.load_timeline(data)
+	var sorted := data.events_sorted()
+	tc.assert_eq(ScriptRunner.cut_at(sorted, 0.0), start, "the t=0 start pose counts at 0")
+	tc.assert_eq(ScriptRunner.cut_at(sorted, 3.99), start)
+	tc.assert_eq(ScriptRunner.cut_at(sorted, 4.0), cut, "at the cut's own time")
+	tc.assert_eq(ScriptRunner.cut_at(sorted, 8.0), cut, "other events don't count")
+	tc.assert_eq(ScriptRunner.cut_at(sorted, 20.0), tele)
+	tc.assert_eq(ScriptRunner.cut_at(sorted.slice(1), 3.0), {}, "none before the first")
+	runner.seek(7.0)
+	tc.assert_eq(runner.cut_at_playhead(), cut, "seeking back past the teleport")
+	stage.queue_free()
+
+
 static func test_effective_duration_declared_wins_when_longer(tc: TestCase) -> void:
 	var pair := _make_runner_with_stage()
 	var runner: ScriptRunner = pair[0]

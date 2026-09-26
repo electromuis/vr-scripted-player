@@ -16,7 +16,9 @@ func _initialize() -> void:
 	for c in tab._list.get_children():
 		if c is HBoxContainer:
 			rows += 1
-	print("command rows: ", rows, " of ", InputBindings.COMMANDS.size())
+	# The player's commands only (Studio's share the table but not the tab).
+	var player_commands := InputBindings.COMMANDS.keys().filter(func(c): return InputBindings.command_app(c) == "player")
+	print("command rows: ", rows, " of ", player_commands.size())
 	var router: InputRouter = main.stage.router
 	var fired: Array = []
 	router.command.connect(func(id): fired.append(String(id)))

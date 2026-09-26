@@ -230,6 +230,43 @@ func _reconcile_swap(new_timeline: TimelineData) -> void:
 	script_reloaded.emit(timeline)
 
 
+## Studio's edits: a new version of the same script, keeping the playhead
+## and without the file. `structural` (spawn / despawn events or their
+## configs changed) reconciles which objects exist, respawning only the
+## ones whose spawn event changed; otherwise only continuous tracks did,
+## and nothing is respawned. Either way the tracks are evaluated at the
+## playhead right away, so a paused view shows the edit.
+func apply_edit(data: TimelineData, structural: bool) -> void:
+	if timeline == null:
+		return
+	if structural:
+		_reconcile_swap(data)
+	else:
+		if inject_default_screen:
+			DefaultScreen.inject(data)
+		timeline = data
+		_events_sorted = data.events_sorted()
+		_next_event_idx = _event_idx_after(playhead, _events_sorted)
+	_reactive_begin()
+	_evaluate_continuous_tracks()
+	_reactive_end()
+
+
+## Stop (or start) following the script file on disk. Studio edits its own
+## copy, so a save coming back through the watcher would undo newer edits.
+func set_live_reload(on: bool) -> void:
+	live_reload = on
+	if not on and _watcher != null:
+		_watcher.queue_free()
+		_watcher = null
+	elif on and _watcher == null and is_inside_tree():
+		_watcher = FileWatcher.new()
+		_watcher.name = "FileWatcher"
+		add_child(_watcher)
+		_watcher.file_changed.connect(_on_file_changed)
+		_update_watched_files()
+
+
 static func _project_state_at(sorted_events: Array, t: float) -> Dictionary:
 	# Returns id -> the spawn event that created it, considering events with t <= playhead.
 	# Despawning (or respawning) an object takes its children with it.
@@ -256,6 +293,23 @@ static func _drop_children(state: Dictionary, id: String) -> void:
 		if state.has(child) and String(state[child].get("parent", "")) == id:
 			_drop_children(state, child)
 			state.erase(child)
+
+
+## The viewer's cut (vr_cut / vr_teleport event) in effect at `t`: the
+## latest at or before it, {} before the first. Seeking doesn't fire the
+## cuts it jumps over, so the Stage puts the viewer here after a seek.
+static func cut_at(sorted_events: Array, t: float) -> Dictionary:
+	var cut: Dictionary = {}
+	for ev in sorted_events:
+		if float(ev.get("t", 0.0)) > t:
+			break
+		if ev.get("action", "") in ["vr_cut", "vr_teleport"]:
+			cut = ev
+	return cut
+
+
+func cut_at_playhead() -> Dictionary:
+	return cut_at(_events_sorted, playhead) if timeline != null else {}
 
 
 static func _event_idx_after(t: float, sorted_events: Array) -> int:

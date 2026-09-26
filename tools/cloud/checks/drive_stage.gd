@@ -90,6 +90,22 @@ func _initialize() -> void:
 	main.runner.seek(5.0)
 	await frames(3)
 	print("screen at 5 s: ", v(screen.global_position))
+	# Seeking lands the viewer at the cut in effect there (no fade), home
+	# before the first; walking off within a cut isn't undone by a seek.
+	if core().has_method("_restore_cut"):
+		main.runner.seek(2.0)
+		await frames(2)
+		print("seek back to 2 s: camera ", cam())
+		main.runner.seek(0.5)
+		await frames(2)
+		print("seek back to 0.5 s: camera ", cam())
+		main.runner.seek(4.0)
+		await frames(2)
+		print("seek forward to 4 s: camera ", cam(), " overlay alpha ", snappedf(fade.color.a, 0.01))
+		(part("desktop_camera") as Camera3D).global_position = Vector3(-2, 1.5, 7)
+		main.runner.seek(6.0)
+		await frames(2)
+		print("seek within cut 2: camera ", cam())
 
 	# A plain video: the look from before the script comes back, and the
 	# view returns home (a cut moved it).

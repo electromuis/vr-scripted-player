@@ -50,10 +50,38 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
   ```
 
   Available: `view_color(uv)` (what was rendered), `iTime`, `iResolution`, `eye` (0 left, 1 right in VR), `strength`, `audio_level` / `audio_bass` / `audio_mid` / `audio_high`, and `audio_spectrum(x)` (0–11 kHz across 0..1). `uniform float|int|bool` lines with a `hint_range` get sliders, like layer shaders. The result is blended over the view by Strength, so you don't need to handle it. If it doesn't compile, the Camera tab shows the error with the line number in your file. In VR, warp both eyes the same way (don't make the effect depend on `eye`) and avoid big flashes faster than three a second.
+- **Script cuts:** a script's cuts move you to where its author placed the viewer. Seeking puts you at the cut in effect at the new time (or back home before the first one), so seeking back past a cut undoes it; a seek that stays between the same two cuts leaves you where you are. **F2 → Config → Script camera** turns cuts off.
 - **Skybox** is black by default; other options, plus any panorama images in the `skyboxes` folders listed in **F2 → Config**.
 - **FPS:** **F2 → Config → FPS** shows the frame rate at the start of the desktop top bar and on the wrist HUD.
 - **Fullscreen / play bar:** **F11** toggles fullscreen and **H** hides or shows the bottom play bar on the desktop window. Both are also in **F2 → Config**, and they stay set the next time you open the player.
 - **Timecode:** a Whirligig-compatible server runs on `127.0.0.1:2000` for MultiFunPlayer / ScriptPlayer. `--whirligig-port N` changes it (0 = off), `--whirligig-lan` accepts other machines.
+
+## Studio (the VR editor, early)
+
+Studio opens a script and lets you change it from inside the headset, on the player's own renderer, so what you see while editing is what the player will show. It's being built in steps (see [VR Studio — Plan.md](./VR%20Studio%20%E2%80%94%20Plan.md)); so far it opens a piece, plays and scrubs it, switches between Play and Edit, undoes and redoes, and saves. Moving things by hand comes next.
+
+- **Start it** from the same build as the player, with Studio's scene and the piece: `VRmviewer.exe res://studio/studio.tscn -- --piece path\to\video.json` (or `build_and_run.bat studio [video.json]`). A video with a same-name `.json` next to it works as the piece too; `--start <seconds>` opens at that time, `--vr` / `--desktop` as in the player.
+- **Play and Edit:** Play is the audience view with nothing added. Edit shows the piece's name, the time, whether there are unsaved changes and what just happened, on the left wrist in the headset and in the corner of the desktop window. Switching keeps the playhead.
+- **Controls** (defaults; Studio's own, separate from the player's):
+
+  | | Headset | Keyboard |
+  |---|---|---|
+  | Play / Edit | left ≡ | Tab |
+  | Play / pause | A | Space, K |
+  | Step 1 s | | ← → |
+  | Seek 10 s | right stick ← → | Shift+← → |
+  | Scrub (Edit; further = faster) | left trigger + left stick | |
+  | Go to the start | | Home |
+  | Undo / redo (Edit) | B / hold B | Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y |
+  | Save | | Ctrl+S |
+  | Reset view (the home seat) | right stick click | R |
+  | Enter / leave VR | | F1 |
+
+  In Edit mode on the desktop, WASD flies, E goes up and Q down, and the right mouse button looks around.
+- **Saving:** Ctrl+S writes the piece back to its `.json`, after checking it with the player's own validator (an edit that would make it invalid isn't saved, and the status says why). Opening and saving without changes, or after undoing them all, leaves the file byte for byte as it was. After edits it's written with the file's own indentation and key order; a version 1 script is saved as version 2. There's no autosave yet, and closing Studio doesn't ask about unsaved changes.
+- Studio doesn't follow changes other programs make to the file while it's open (a Godot export, say); reopen the piece to see them.
+
+![Studio: Edit mode on the desktop and on the wrist, Play mode, a keyed move of the screen rig, undo, and the glow switched off](docs/studio/m1_studio.png)
 
 ## Prerequisites
 

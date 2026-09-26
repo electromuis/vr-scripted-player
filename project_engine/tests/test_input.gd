@@ -248,3 +248,42 @@ static func test_describe(tc: TestCase) -> void:
 	tc.assert_eq(InputBindings.describe({"input": "R.stick_up", "modifier": "L.trigger"}), "Left trigger + Right stick ↑")
 	tc.assert_eq(InputBindings.describe({"input": "key:Ctrl+Z", "gesture": "double"}), "Double Ctrl+Z key")
 	tc.assert_eq(InputBindings.describe({"input": "L.menu"}), "Left ≡")
+
+
+static func test_studio_commands(tc: TestCase) -> void:
+	var b := _bindings()
+	tc.assert_eq(b.conflicts(), [], "no clashes in the defaults, Studio's included")
+	var pair := _router(b, ["studio"])
+	var r: InputRouter = pair[0]
+	var log: Array = pair[1]
+	r.set_context("play", false)  # as Studio does: the player's are on by default
+	# Play mode: only Studio's own commands, never the player's.
+	_tap(r, "L.menu", 1.0)
+	_tap(r, "R.ax", 2.0)
+	_tap(r, "R.by", 3.0)
+	_key(r, KEY_TAB)
+	_key(r, KEY_TAB, false)
+	tc.assert_eq(log, ["studio_toggle_mode", "studio_play_pause", "studio_toggle_mode"], "B does nothing outside Edit")
+	# Edit mode on top: B undoes (press) and redoes (hold); the stick
+	# scrubs only with the left trigger held.
+	log.clear()
+	r.set_context("studio_edit", true)
+	_tap(r, "R.by", 4.0)
+	r.update(4.5)
+	r.feed_button("R.by", true, 5.0)
+	r.update(5.6)
+	r.feed_button("R.by", false, 5.7)
+	tc.assert_eq(log, ["studio_undo", "studio_redo"])
+	r.feed_stick("L.stick", Vector2(0.8, 0), 6.0)
+	tc.assert_eq(r.axis("studio_scrub"), Vector2.ZERO, "no trigger: no scrub")
+	r.feed_button("L.trigger", true, 6.1)
+	tc.assert_eq(r.axis("studio_scrub"), Vector2(0.8, 0))
+	var ctrl_z := InputEventKey.new()
+	ctrl_z.keycode = KEY_Z
+	ctrl_z.ctrl_pressed = true
+	ctrl_z.pressed = true
+	log.clear()
+	tc.assert_true(r.handle_key(ctrl_z, 7.0))
+	tc.assert_eq(log, ["studio_undo"])
+	tc.assert_eq(InputBindings.command_app("studio_undo"), "studio")
+	tc.assert_eq(InputBindings.command_app("play_pause"), "player")

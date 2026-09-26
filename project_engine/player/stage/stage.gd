@@ -78,6 +78,9 @@ var _last_curvature: float = -1.0
 ## switched to the locked Script preset; restored for the next plain video.
 ## Empty while not playing a script.
 var _look_before_script: Dictionary = {}
+## The cut event the viewer was last put at ({} for none): a seek that
+## lands under a different cut moves them there (or home).
+var _current_cut: Dictionary = {}
 
 
 func _ready() -> void:
@@ -533,6 +536,7 @@ func _on_script_loaded(data: TimelineData) -> void:
 	if _script_moved_view:
 		_script_moved_view = false
 		reset_view()
+	_current_cut = {}
 	_projection_override = "auto"
 	_apply_look_for(data)
 	# Spawn what the timeline starts with (the screen) now: the clock is
@@ -609,6 +613,27 @@ func _on_video_load_failed() -> void:
 func _on_runner_seeked(t: float) -> void:
 	if video != null:
 		video.seek_seconds(t)
+	_restore_cut()
+
+
+## Seeking skips the cuts in between, so put the viewer where the cut in
+## effect at the new playhead left them: back past a cut (or to the
+## t=0 start pose), or forward over one. Nothing moves while the seek
+## stays under the same cut, so a viewer who walked off isn't pulled back.
+func _restore_cut() -> void:
+	if not settings.allow_script_camera:
+		return
+	var cut := runner.cut_at_playhead()
+	if cut == _current_cut:
+		return
+	_current_cut = cut
+	if cut.is_empty():
+		_script_moved_view = false
+		reset_view()
+		return
+	var to_dict = cut.get("to", {})
+	if typeof(to_dict) == TYPE_DICTIONARY:
+		_snap_camera(_cut_position(to_dict), _cut_rotation(to_dict))
 
 
 func _on_runner_play_state_changed(is_playing: bool) -> void:
@@ -632,9 +657,9 @@ func _apply_camera_cut(ev: Dictionary) -> void:
 	var to_dict = ev.get("to", {})
 	if typeof(to_dict) != TYPE_DICTIONARY:
 		return
-	var pos := Interpolation.to_vec3(to_dict.get("position", [0, 0, 0]))
-	var rot_arr = to_dict.get("rotation_deg", [0, 0, 0])
-	var rot := Interpolation.to_vec3(rot_arr) if typeof(rot_arr) == TYPE_ARRAY else Vector3.ZERO
+	_current_cut = ev
+	var pos := _cut_position(to_dict)
+	var rot := _cut_rotation(to_dict)
 	var tr = ev.get("transition")
 	if typeof(tr) == TYPE_DICTIONARY and String(tr.get("type", "")) == "fade_to_black":
 		var dur := float(tr.get("duration", 0.5))
@@ -648,6 +673,15 @@ func _apply_camera_cut(ev: Dictionary) -> void:
 			fade_overlay.fade_through(dur, func(): _snap_camera(pos, rot))
 	else:
 		_snap_camera(pos, rot)
+
+
+static func _cut_position(to_dict: Dictionary) -> Vector3:
+	return Interpolation.to_vec3(to_dict.get("position", [0, 0, 0]))
+
+
+static func _cut_rotation(to_dict: Dictionary) -> Vector3:
+	var rot_arr = to_dict.get("rotation_deg", [0, 0, 0])
+	return Interpolation.to_vec3(rot_arr) if typeof(rot_arr) == TYPE_ARRAY else Vector3.ZERO
 
 
 func _snap_camera(pos: Vector3, rot_deg: Vector3) -> void:

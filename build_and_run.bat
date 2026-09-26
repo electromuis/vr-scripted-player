@@ -6,6 +6,12 @@ rem   1) Export the authoring scene (project_script_example) to JSON
 rem   2) Export the engine project (project_engine) to a Windows .exe
 rem   3) Launch the .exe with --script pointing at the JSON from step 1
 rem
+rem   build_and_run.bat                 the player, as above
+rem   build_and_run.bat studio [json]   Studio (the VR editor) instead, on the
+rem                                     moving-screen JSON or the one given.
+rem                                     Same .exe: Studio is its own main scene
+rem                                     (res://studio/studio.tscn).
+rem
 rem Godot 4.7 must be on PATH as `godot`. For step 2 you also need Windows
 rem export templates installed (Godot editor > Editor > Manage Export
 rem Templates > Download for the matching version).
@@ -19,6 +25,9 @@ set SCRIPT_OUT=%REPO%\scripts\moving_screen\video.json
 set BUILD_DIR=%REPO%\build
 set BINARY=%BUILD_DIR%\VRmviewer.exe
 set PRESET=Windows Desktop
+set APP=%~1
+set PIECE=%~2
+if "%PIECE%"=="" set PIECE=%SCRIPT_OUT%
 
 where godot >nul 2>&1
 if errorlevel 1 (
@@ -56,6 +65,11 @@ if not exist "%BINARY%" (
 )
 
 echo.
+if /i "%APP%"=="studio" (
+    echo === [3/3] Run Studio: %BINARY% with --piece %PIECE% ===
+    "%BINARY%" res://studio/studio.tscn -- --piece "%PIECE%"
+    exit /b !ERRORLEVEL!
+)
 echo === [3/3] Run %BINARY% with --script %SCRIPT_OUT% ===
 "%BINARY%" -- --script "%SCRIPT_OUT%"
 exit /b %ERRORLEVEL%

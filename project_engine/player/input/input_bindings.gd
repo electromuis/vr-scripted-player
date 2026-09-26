@@ -33,10 +33,14 @@ const PATH := "user://input_bindings.json"
 const FORMAT_VERSION := 1
 const KIND := "input_bindings"
 
-## Highest priority first.
-const CONTEXTS := ["menus", "free", "locked", "play"]
+## Highest priority first. Studio's contexts are only ever active in
+## Studio, the player's only in the player: "studio" always, "studio_edit"
+## on top of it in Edit mode.
+const CONTEXTS := ["menus", "studio_edit", "studio", "free", "locked", "play"]
 const CONTEXT_LABELS := {
 	"menus": "Pointing at a menu",
+	"studio_edit": "Studio: editing",
+	"studio": "Studio",
 	"free": "Free movement",
 	"locked": "Movement locked",
 	"play": "Watching",
@@ -48,7 +52,7 @@ const RESERVED := {"menus": ["R.trigger"]}
 const GESTURES := ["press", "hold", "double"]
 
 ## id -> label, context, kind ("button"; "held": pressed and released, like
-## a drag; "axis": a whole stick), app ("player" or "studio").
+## a drag; "axis": a whole stick), app ("player", the default, or "studio").
 const COMMANDS := {
 	"play_pause": {"label": "Play / pause", "context": "play"},
 	"screen_trigger": {"label": "Play / pause when aiming at the screen", "context": "play"},
@@ -68,6 +72,20 @@ const COMMANDS := {
 	"move": {"label": "Walk", "context": "free", "kind": "axis"},
 	"turn": {"label": "Snap turn", "context": "free", "kind": "axis"},
 	"scroll_menu": {"label": "Scroll the menu", "context": "menus", "kind": "axis"},
+	# Studio
+	"studio_toggle_mode": {"label": "Switch Play / Edit", "context": "studio", "app": "studio"},
+	"studio_play_pause": {"label": "Play / pause", "context": "studio", "app": "studio"},
+	"studio_step_back": {"label": "Step back 1 s", "context": "studio", "app": "studio"},
+	"studio_step_forward": {"label": "Step forward 1 s", "context": "studio", "app": "studio"},
+	"studio_seek_back": {"label": "Seek back 10 s", "context": "studio", "app": "studio"},
+	"studio_seek_forward": {"label": "Seek forward 10 s", "context": "studio", "app": "studio"},
+	"studio_go_start": {"label": "Go to the start", "context": "studio", "app": "studio"},
+	"studio_save": {"label": "Save", "context": "studio", "app": "studio"},
+	"studio_toggle_vr": {"label": "Enter / leave VR", "context": "studio", "app": "studio"},
+	"studio_reset_view": {"label": "Reset view (home seat)", "context": "studio", "app": "studio"},
+	"studio_undo": {"label": "Undo", "context": "studio_edit", "app": "studio"},
+	"studio_redo": {"label": "Redo", "context": "studio_edit", "app": "studio"},
+	"studio_scrub": {"label": "Scrub (further = faster)", "context": "studio_edit", "kind": "axis", "app": "studio"},
 }
 
 ## Today's player, button for button.
@@ -90,6 +108,19 @@ const DEFAULTS := {
 	"move": [{"input": "L.stick"}],
 	"turn": [{"input": "R.stick"}],
 	"scroll_menu": [{"input": "R.stick"}],
+	"studio_toggle_mode": [{"input": "L.menu"}, {"input": "key:Tab"}],
+	"studio_play_pause": [{"input": "R.ax"}, {"input": "key:Space"}, {"input": "key:K"}],
+	"studio_step_back": [{"input": "key:Left"}],
+	"studio_step_forward": [{"input": "key:Right"}],
+	"studio_seek_back": [{"input": "R.stick_left"}, {"input": "key:Shift+Left"}],
+	"studio_seek_forward": [{"input": "R.stick_right"}, {"input": "key:Shift+Right"}],
+	"studio_go_start": [{"input": "key:Home"}],
+	"studio_save": [{"input": "key:Ctrl+S"}],
+	"studio_toggle_vr": [{"input": "key:F1"}],
+	"studio_reset_view": [{"input": "R.stick_click"}, {"input": "key:R"}],
+	"studio_undo": [{"input": "R.by"}, {"input": "key:Ctrl+Z"}],
+	"studio_redo": [{"input": "R.by", "gesture": "hold"}, {"input": "key:Ctrl+Shift+Z"}, {"input": "key:Ctrl+Y"}],
+	"studio_scrub": [{"input": "L.stick", "modifier": "L.trigger"}],
 }
 
 const _BUTTON_NAMES := {
@@ -127,6 +158,11 @@ static func command_context(command: String) -> String:
 
 static func command_kind(command: String) -> String:
 	return String(COMMANDS.get(command, {}).get("kind", "button"))
+
+
+## "player" or "studio": the app a command belongs to.
+static func command_app(command: String) -> String:
+	return String(COMMANDS.get(command, {}).get("app", "player"))
 
 
 ## The context a binding of `command` applies in.

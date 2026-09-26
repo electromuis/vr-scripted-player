@@ -9,6 +9,7 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="${WORK:-/tmp/vj_cloud}"
+export REPO WORK
 GODOT="$WORK/godot/Godot_v4.7.1-stable_linux.x86_64"
 COPY="$WORK/engine_copy"
 CHECK="$1"

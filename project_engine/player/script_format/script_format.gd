@@ -7,7 +7,7 @@ extends RefCounted
 ## Returns `{"ok": bool, "data"?: TimelineData, "error"?: String, "errors"?: Array[String]}`.
 ## Multiple errors are surfaced so authors don't have to fix-then-re-run repeatedly.
 
-## What exporters write. Older versions still load (see _upgrade).
+## What exporters write. Older versions still load (see upgrade).
 const SUPPORTED_VERSION := 2
 const MIN_VERSION := 1
 
@@ -38,13 +38,19 @@ static func load_from_string(text: String, source_path: String = "<memory>") -> 
 		return _err("Invalid JSON in %s" % source_path)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return _err("Top-level JSON must be an object (in %s)" % source_path)
+	return load_from_dict(parsed, source_path)
 
+
+## Same as load_from_string, for a script already parsed (Studio's edit
+## model). `parsed` is upgraded in place and the data shares its parts, so
+## pass a copy if it must stay as it is.
+static func load_from_dict(parsed: Dictionary, source_path: String = "<memory>") -> Dictionary:
 	var errors: Array = []
 	_validate(parsed, errors)
 	if errors.size() > 0:
 		return {"ok": false, "error": errors[0], "errors": errors}
 
-	_upgrade(parsed)
+	upgrade(parsed)
 	var data := TimelineData.new()
 	data.format_version = int(parsed.get("format_version", 1))
 	data.meta = parsed.get("meta", {})
@@ -227,7 +233,7 @@ static func _is_pair(h) -> bool:
 ## in place. v1's "cubic" was a per-segment smoothstep, which v2 calls
 ## "ease" ("cubic" now runs through the keys like Godot's), so v1 scripts
 ## keep moving the way they always did.
-static func _upgrade(root: Dictionary) -> void:
+static func upgrade(root: Dictionary) -> void:
 	if int(root.get("format_version", SUPPORTED_VERSION)) >= 2:
 		return
 	for track in root.get("tracks", []):

@@ -1,0 +1,20 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://studio/studio.gd" id="1_studio"]
+[ext_resource type="PackedScene" uid="uid://cvjstage00001" path="res://player/stage/stage.tscn" id="2_stage"]
+[ext_resource type="Script" path="res://studio/ui/studio_status.gd" id="3_status"]
+
+[node name="Studio" type="Node3D"]
+script = ExtResource("1_studio")
+
+[node name="Stage" parent="." instance=ExtResource("2_stage")]
+
+[node name="UI" type="CanvasLayer" parent="."]
+layer = 3
+
+[node name="Status" type="PanelContainer" parent="UI"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 700.0
+offset_bottom = 60.0
+script = ExtResource("3_status")
