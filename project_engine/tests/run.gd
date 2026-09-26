@@ -43,6 +43,7 @@ func _init() -> void:
 		for n in failed_names:
 			print("  FAILED %s" % n)
 		quit(1)
+		return  # quit() only sets the exit code; don't let quit(0) overwrite it
 	quit(0)
 
 
