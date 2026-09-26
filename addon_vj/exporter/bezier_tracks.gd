@@ -78,6 +78,11 @@ static func component_count(value) -> int:
 	return _COMPONENTS[typeof(value)].size()
 
 
+## The component names of a vector / colour value, in index order.
+static func component_names(value) -> Array:
+	return _COMPONENTS[typeof(value)]
+
+
 ## A zero value of the type the components `names` belong to (for a
 ## property with no value to start from, e.g. an unset shader parameter).
 static func zero_for_components(names: Array):

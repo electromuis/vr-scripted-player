@@ -35,7 +35,7 @@ extends RefCounted
 ##       <path>:spin / :pulse (VJObject)              → shader_param "<id>.reactive"
 ##       <viewer>:position / :rotation                → vr_cut events
 ##     Value and bezier tracks both work; bezier tracks (one per component,
-##     e.g. `<path>:position:x`) are baked to linear keys.
+##     e.g. `<path>:position:x`) export as "bezier" keys with their handles.
 ##
 ## Scripts are referenced via preload rather than `class_name` so the exporter
 ## can be run headlessly against a fresh project (before Godot has populated
@@ -56,10 +56,6 @@ const _VISUALIZER_ADDON_DIR := "res://addons/vj_editor/visualizer/"
 const _VISUALIZER_PLAYER_DIR := "res://player/visualizer/"
 const _SHADER_PARAM_PREFIX := "shader_parameter/"
 const _DISPLAY_PROPS := ["curvature", "vertical_curvature", "opacity"]
-## Bezier tracks are baked to linear keys: samples per second, and how far
-## (in the property's units) a dropped sample may stray from the line.
-const _BEZIER_BAKE_FPS := 30.0
-const _BEZIER_BAKE_TOLERANCE := 0.001
 ## Builtin prefab keys → the player's copies.
 const _PLAYER_PREFABS := {
 	"screen": "res://player/prefabs/screen.tscn",
@@ -154,7 +150,7 @@ static func _build_json(scene, out_dir: String) -> Dictionary:
 		prefabs[obj.prefab_key] = obj.prefab_path
 
 	var json_root := {
-		"format_version": 1,
+		"format_version": 2,
 		"meta": meta,
 		"media": media,
 		"prefabs": prefabs,
@@ -405,7 +401,7 @@ static func _tracks_from_animation(scene: Node, animation: Animation, objects: A
 			continue
 		# Bezier tracks animate one float each; a vector's or colour's
 		# components (`position:x`, `glow_tint:r`) are regrouped into the
-		# property and baked together.
+		# property and exported together.
 		var split := BezierTracksScript.split_component(node, path)
 		var prop_path: NodePath = split[0]
 		var group: Dictionary = bezier_groups.get(String(prop_path), {})
@@ -414,7 +410,7 @@ static func _tracks_from_animation(scene: Node, animation: Animation, objects: A
 			bezier_groups[String(prop_path)] = group
 		group.comps[split[1]] = i
 	for group in bezier_groups.values():
-		_route_track(out, group.obj, group.effect, group.path, _bake_bezier(animation, group.node, group.path, group.comps))
+		_route_track(out, group.obj, group.effect, group.path, _bezier_keys(animation, group.node, group.path, group.comps))
 	return out
 
 
@@ -464,7 +460,7 @@ static func _append_track(out: Array, obj: _Obj, path: NodePath, keys: Array) ->
 static func _transform_track(keys: Array, target: String, channel: String, radians_to_degrees: bool) -> Dictionary:
 	var kfs: Array = []
 	for key in keys:
-		kfs.append(_keyframe(key, _vec3_to_array(key.value, radians_to_degrees)))
+		kfs.append(_keyframe(key, _vec3_to_array(key.value, radians_to_degrees), rad_to_deg(1.0) if radians_to_degrees else 1.0))
 	return {
 		"type": "transform",
 		"target": target,
@@ -486,11 +482,15 @@ static func _shader_param_track(keys: Array, target: String, param: String, with
 	}
 
 
-static func _keyframe(key: Dictionary, value) -> Dictionary:
+## `dv_scale`: what the value was scaled by (bezier handles follow).
+static func _keyframe(key: Dictionary, value, dv_scale: float = 1.0) -> Dictionary:
 	var kf := {"t": float(key.t), "value": value}
 	var interp: String = key.get("interp", "linear")
 	if interp != "linear":
 		kf["interp"] = interp
+	for h in ["in", "out"]:
+		if key.has(h):
+			kf[h] = _handles_to_json(key[h], value, dv_scale)
 	return kf
 
 
@@ -511,95 +511,156 @@ static func _value_track_keys(animation: Animation, track_idx: int) -> Array:
 	return keys
 
 
-## Samples a property's bezier tracks (`comps`: component -> track, "" for
-## a plain float) into linear keys: every key time plus _BEZIER_BAKE_FPS
-## samples between, dropping samples a straight line already reproduces
-## (so a linear segment stays two keys). Components without a track hold
-## the node's current value.
-static func _bake_bezier(animation: Animation, node: Node, prop_path: NodePath, comps: Dictionary) -> Array:
-	var key_times: Array = []
+## A property's bezier tracks (`comps`: component -> track, "" for a plain
+## float) as "bezier" keys carrying Godot's handles, one key at every time
+## any component has one. A component with no key of its own at such a
+## time has its curve split there exactly (de Casteljau), so every curve
+## stays the same. Components without a track hold the node's current
+## value. Keys are {t, value, interp, in?, out?}, handles Vector2 (dt, dv)
+## — an Array of them, by component index, for vector / colour values.
+static func _bezier_keys(animation: Animation, node: Node, prop_path: NodePath, comps: Dictionary) -> Array:
+	var times: Array = []
 	for track in comps.values():
 		for k in animation.track_get_key_count(track):
 			var t := animation.track_get_key_time(track, k)
-			if not key_times.has(t):
-				key_times.append(t)
-	key_times.sort()
-	if key_times.is_empty():
+			if not times.has(t):
+				times.append(t)
+	times.sort()
+	if times.is_empty():
 		return []
 
-	var base = 0.0 if comps.has("") else node.get_indexed(NodePath(prop_path.get_concatenated_subnames()))
+	var scalar := comps.has("")
+	var base = 0.0 if scalar else node.get_indexed(NodePath(prop_path.get_concatenated_subnames()))
 	if base == null:
 		base = BezierTracksScript.zero_for_components(comps.keys())
-	var sample := func(t: float):
-		if comps.has(""):
-			return animation.bezier_track_interpolate(comps[""], t)
-		var v = base
-		for c in comps:
-			v[BezierTracksScript.component_index(c)] = animation.bezier_track_interpolate(comps[c], t)
-		return v
+	var names: Array = [""] if scalar else BezierTracksScript.component_names(base)
+	# One list per component (by index), each a {v, in, out} per time.
+	var per_comp: Array = []
+	for c in names:
+		if comps.has(c):
+			per_comp.append(_bezier_component(animation, comps[c], times))
+		else:
+			var v := float(base) if scalar else float(base[BezierTracksScript.component_index(c)])
+			var flat: Array = []
+			for t in times:
+				flat.append({"v": v, "in": Vector2.ZERO, "out": Vector2.ZERO})
+			per_comp.append(flat)
 
-	var keys: Array = [{"t": key_times[0], "value": sample.call(key_times[0])}]
-	for s in range(1, key_times.size()):
-		var t0: float = key_times[s - 1]
-		var t1: float = key_times[s]
-		var steps := maxi(1, ceili((t1 - t0) * _BEZIER_BAKE_FPS))
-		var run: Array = []  # samples after the previous key time, ending at t1
-		for n in range(1, steps + 1):
-			var t := t1 if n == steps else t0 + (t1 - t0) * n / steps
-			run.append({"t": t, "value": sample.call(t)})
-		# Greedy: extend the line from the last kept key while every sample
-		# it skips stays on it; keep the sample where it would break. Each
-		# skipped sample narrows the slopes the line may have (per
-		# component), so checking the next sample is O(1), not a rescan.
-		var i := 0
-		while i < run.size():
-			var a: Dictionary = keys[-1]
-			var a_v := _float_components(a.value)
-			var lo := PackedFloat64Array()
-			var hi := PackedFloat64Array()
-			lo.resize(a_v.size())
-			hi.resize(a_v.size())
-			lo.fill(-INF)
-			hi.fill(INF)
-			var j := i
-			while j + 1 < run.size():
-				_narrow_slopes(lo, hi, a.t, a_v, run[j])
-				if not _slopes_allow(lo, hi, a.t, a_v, run[j + 1]):
-					break
-				j += 1
-			keys.append(run[j])
-			i = j + 1
+	var keys: Array = []
+	for i in times.size():
+		var value = base
+		var ins: Array = []
+		var outs: Array = []
+		for c in names.size():
+			var p: Dictionary = per_comp[c][i]
+			if scalar:
+				value = p.v
+			else:
+				value[BezierTracksScript.component_index(names[c])] = p.v
+			ins.append(p["in"])
+			outs.append(p.out)
+		keys.append({"t": times[i], "value": value, "in": ins[0] if scalar else ins, "out": outs[0] if scalar else outs})
+	# A segment whose handles are all flat is a straight line: plain linear.
+	for i in keys.size():
+		var curved := i + 1 < keys.size() and not (_flat(keys[i].out) and _flat(keys[i + 1]["in"]))
+		keys[i]["interp"] = "bezier" if curved else "linear"
+	for i in keys.size():
+		if keys[i].interp != "bezier":
+			keys[i].erase("out")
+		if i == 0 or keys[i - 1].interp != "bezier":
+			keys[i].erase("in")
 	return keys
 
 
-## Narrows each component's allowed slope range (from anchor time `a_t`,
-## values `a_v`) so a line through the anchor passes within
-## _BEZIER_BAKE_TOLERANCE of sample `p`.
-static func _narrow_slopes(lo: PackedFloat64Array, hi: PackedFloat64Array, a_t: float, a_v: PackedFloat64Array, p: Dictionary) -> void:
-	var dt: float = p.t - a_t
-	var v := _float_components(p.value)
-	for c in a_v.size():
-		lo[c] = maxf(lo[c], (v[c] - _BEZIER_BAKE_TOLERANCE - a_v[c]) / dt)
-		hi[c] = minf(hi[c], (v[c] + _BEZIER_BAKE_TOLERANCE - a_v[c]) / dt)
+## One bezier track's {v, in, out} at each of `times` (a sorted superset of
+## its key times). Before its first key and after its last it holds that
+## key's value, flat. Times inside a segment split the curve there.
+static func _bezier_component(animation: Animation, track: int, times: Array) -> Array:
+	var count := animation.track_get_key_count(track)
+	var own: Dictionary = {}  # time -> {v, in, out}, absolute handles relative to the key
+	for k in count:
+		own[animation.track_get_key_time(track, k)] = {
+			"v": animation.bezier_track_get_key_value(track, k),
+			# Godot never draws the first key's in or the last key's out.
+			"in": animation.bezier_track_get_key_in_handle(track, k) if k > 0 else Vector2.ZERO,
+			"out": animation.bezier_track_get_key_out_handle(track, k) if k < count - 1 else Vector2.ZERO,
+		}
+	var first := animation.track_get_key_time(track, 0)
+	var last := animation.track_get_key_time(track, count - 1)
+	var at: Dictionary = {}  # time -> {v, in, out}
+	for k in count - 1:
+		var t0 := animation.track_get_key_time(track, k)
+		var t1 := animation.track_get_key_time(track, k + 1)
+		var a: Dictionary = own[t0]
+		var b: Dictionary = own[t1]
+		# The segment as absolute control points, cut at each time inside it.
+		var p0 := Vector2(t0, a.v)
+		var p1: Vector2 = p0 + a.out
+		var p3 := Vector2(t1, b.v)
+		var p2: Vector2 = p3 + b["in"]
+		# The previous segment already wrote this key (its in handle may be cut).
+		var start: Dictionary = at.get(t0, {"v": a.v, "in": a["in"], "out": a.out})
+		at[t0] = start
+		for t in times:
+			if t <= t0 or t >= t1:
+				continue
+			var s := _bezier_param_at(p0, p1, p2, p3, t)
+			# de Casteljau: the left part ends at m, the right starts there.
+			var q0 := p0.lerp(p1, s)
+			var q1 := p1.lerp(p2, s)
+			var q2 := p2.lerp(p3, s)
+			var r0 := q0.lerp(q1, s)
+			var r1 := q1.lerp(q2, s)
+			var m := r0.lerp(r1, s)
+			start.out = q0 - p0
+			start = {"v": m.y, "in": r0 - m, "out": r1 - m}
+			at[t] = start
+			p0 = m
+			p1 = r1
+			p2 = q2
+		start.out = p1 - p0
+		at[t1] = {"v": b.v, "in": p2 - p3, "out": b.out}
+	var out: Array = []
+	for t in times:
+		if at.has(t):
+			out.append(at[t])
+		else:  # outside the track's keys (or its only key)
+			out.append({"v": own[first if t <= first else last].v, "in": Vector2.ZERO, "out": Vector2.ZERO})
+	return out
 
 
-## Whether the line from the anchor to `b` stays inside every slope range.
-static func _slopes_allow(lo: PackedFloat64Array, hi: PackedFloat64Array, a_t: float, a_v: PackedFloat64Array, b: Dictionary) -> bool:
-	var dt: float = b.t - a_t
-	var v := _float_components(b.value)
-	for c in a_v.size():
-		var slope := (v[c] - a_v[c]) / dt
-		if slope < lo[c] or slope > hi[c]:
+## The curve parameter where the segment's time (x) reaches `t`, by
+## bisection (x runs from p0.x to p3.x).
+static func _bezier_param_at(p0: Vector2, p1: Vector2, p2: Vector2, p3: Vector2, t: float) -> float:
+	var low := 0.0
+	var high := 1.0
+	for i in 40:
+		var middle := (low + high) / 2.0
+		if p0.bezier_interpolate(p1, p2, p3, middle).x < t:
+			low = middle
+		else:
+			high = middle
+	return (low + high) / 2.0
+
+
+static func _flat(handles) -> bool:
+	if handles is Vector2:
+		return handles.is_zero_approx()
+	for h in handles:
+		if not h.is_zero_approx():
 			return false
 	return true
 
 
-static func _float_components(value) -> PackedFloat64Array:
-	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
-		return PackedFloat64Array([float(value)])
-	var out := PackedFloat64Array()
-	for c in BezierTracksScript.component_count(value):
-		out.append(value[c])
+## A key's handles as JSON: [dt, dv], or one per element of an array
+## `value` (only as many as the value has: colours may drop alpha). `dv`
+## scales like the value (radians → degrees).
+static func _handles_to_json(handles, value, dv_scale: float):
+	if handles is Vector2:
+		return [handles.x, handles.y * dv_scale]
+	var out: Array = []
+	for c in (value.size() if value is Array else handles.size()):
+		out.append([handles[c].x, handles[c].y * dv_scale])
 	return out
 
 

@@ -80,6 +80,3 @@ self-contained.
   looking down −Z, so their job is to cover the environment swap. The screens
   live in the player's `ScreenMount`, which is anchored at the origin, so
   moving the viewer far away would leave the screens behind.
-- The editor's cubic interpolation is Godot's (smooth through each key). The
-  player's `cubic` is a per-segment smoothstep (it eases in and out at every
-  key), so motion timing differs slightly.

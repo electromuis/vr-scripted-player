@@ -197,3 +197,33 @@ static func test_resolve_relative_and_absolute(tc: TestCase) -> void:
 	data.base_dir = "res://examples/minimal"
 	tc.assert_eq(data.resolve("video.mp4"), "res://examples/minimal/video.mp4")
 	tc.assert_eq(data.resolve("res://foo.mp4"), "res://foo.mp4")
+
+
+static func test_v1_cubic_upgrades_to_ease(tc: TestCase) -> void:
+	var track := '{"type":"shader_param","target":"s.surface","param":"p","keyframes":[{"t":0,"value":0,"interp":"cubic"},{"t":1,"value":1}]}'
+	var r := ScriptFormat.load_from_string('{"format_version":1,"media":{"video":"x.mp4"},"tracks":[%s]}' % track)
+	tc.assert_ok(r)
+	tc.assert_eq(r.data.tracks[0].keyframes[0].interp, "ease", "v1 cubic was a smoothstep")
+	r = ScriptFormat.load_from_string('{"format_version":2,"media":{"video":"x.mp4"},"tracks":[%s]}' % track)
+	tc.assert_ok(r)
+	tc.assert_eq(r.data.tracks[0].keyframes[0].interp, "cubic")
+
+
+static func test_newer_format_version_rejected(tc: TestCase) -> void:
+	tc.assert_err(ScriptFormat.load_from_string('{"format_version":3,"media":{"video":"x.mp4"}}'), "format_version")
+
+
+static func test_bezier_handles_validated(tc: TestCase) -> void:
+	var ok := """
+	{ "format_version":2, "media":{"video":"x.mp4"}, "tracks":[
+		{ "type":"transform", "target":"a", "channel":"position", "keyframes":[
+			{"t":0,"value":[0,0,0],"interp":"bezier","out":[[0.3,1],[0.3,0],[0.3,0]]},
+			{"t":1,"value":[1,1,1],"in":[[-0.3,0],[-0.3,0],[-0.3,0]]} ] },
+		{ "type":"shader_param", "target":"a.surface", "param":"p", "keyframes":[
+			{"t":0,"value":0,"interp":"bezier","out":[0.3,1]}, {"t":1,"value":1,"in":[-0.3,0]} ] } ] }
+	"""
+	tc.assert_ok(ScriptFormat.load_from_string(ok))
+	var bad_count := '{"format_version":2,"media":{"video":"x.mp4"},"tracks":[{"type":"transform","target":"a","channel":"position","keyframes":[{"t":0,"value":[0,0,0],"interp":"bezier","out":[[0.3,1]]}]}]}'
+	tc.assert_err(ScriptFormat.load_from_string(bad_count), ".out must be")
+	var bad_pair := '{"format_version":2,"media":{"video":"x.mp4"},"tracks":[{"type":"shader_param","target":"a.surface","param":"p","keyframes":[{"t":0,"value":0,"in":[1,2,3]}]}]}'
+	tc.assert_err(ScriptFormat.load_from_string(bad_pair), ".in must be")

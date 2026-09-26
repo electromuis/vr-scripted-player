@@ -120,8 +120,13 @@ the player runtime consumes.
   - `<screen or layer>:curvature` / `:vertical_curvature` / `:opacity` →
     `shader_param` track, target `<node>.display`
   - Discrete tracks export with `"interp": "step"`
+  - Cubic tracks export as `"interp": "cubic"`, which the player runs through
+    the keys the way Godot does
   - Bezier tracks work too (one per component, e.g. `<node>:position:x`); they
-    export baked to linear keys. **Tools > VJ: Convert value tracks to Bezier**
+    export as `"interp": "bezier"` keys with their handles, so the player draws
+    the same curves. Where a vector's components have keys at different times,
+    each curve is split there exactly (it stays the same curve). Segments with
+    flat handles export as plain linear. **Tools > VJ: Convert value tracks to Bezier**
     converts a scene's numeric value tracks (undoable) so the Animation panel's
     curve editor can edit them; `visible`, nearest / discrete and viewer tracks
     stay value tracks.

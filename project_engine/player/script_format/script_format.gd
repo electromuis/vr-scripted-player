@@ -7,7 +7,9 @@ extends RefCounted
 ## Returns `{"ok": bool, "data"?: TimelineData, "error"?: String, "errors"?: Array[String]}`.
 ## Multiple errors are surfaced so authors don't have to fix-then-re-run repeatedly.
 
-const SUPPORTED_VERSION := 1
+## What exporters write. Older versions still load (see _upgrade).
+const SUPPORTED_VERSION := 2
+const MIN_VERSION := 1
 
 const TRACK_TRANSFORM := "transform"
 const TRACK_SHADER_PARAM := "shader_param"
@@ -18,7 +20,7 @@ const TRANSFORM_CHANNELS := ["position", "rotation_deg", "scale"]
 
 const EVENT_ACTIONS := ["spawn", "despawn", "vr_cut", "vr_teleport"]
 
-const INTERP_MODES := ["linear", "cubic", "step"]
+const INTERP_MODES := ["linear", "cubic", "step", "ease", "bezier"]
 
 
 static func load_from_file(path: String) -> Dictionary:
@@ -42,6 +44,7 @@ static func load_from_string(text: String, source_path: String = "<memory>") -> 
 	if errors.size() > 0:
 		return {"ok": false, "error": errors[0], "errors": errors}
 
+	_upgrade(parsed)
 	var data := TimelineData.new()
 	data.format_version = int(parsed.get("format_version", 1))
 	data.meta = parsed.get("meta", {})
@@ -63,8 +66,8 @@ static func _validate(root: Dictionary, errors: Array) -> void:
 		errors.append("Missing required field: format_version")
 	else:
 		var v = root["format_version"]
-		if typeof(v) not in [TYPE_INT, TYPE_FLOAT] or int(v) != SUPPORTED_VERSION:
-			errors.append("format_version must be %d (got %s)" % [SUPPORTED_VERSION, v])
+		if typeof(v) not in [TYPE_INT, TYPE_FLOAT] or int(v) < MIN_VERSION or int(v) > SUPPORTED_VERSION:
+			errors.append("format_version must be %d to %d (got %s)" % [MIN_VERSION, SUPPORTED_VERSION, v])
 
 	_validate_media(root.get("media"), errors)
 	_validate_string_map(root.get("prefabs", {}), "prefabs", errors)
@@ -193,6 +196,41 @@ static func _validate_keyframes(kfs, loc: String, expected_len: int, errors: Arr
 		if kf.has("interp"):
 			if not INTERP_MODES.has(kf["interp"]):
 				errors.append("%s.interp must be one of %s" % [kloc, INTERP_MODES])
+		for h in ["in", "out"]:
+			if kf.has(h) and not _valid_handles(kf[h], kf.get("value")):
+				errors.append("%s.%s must be a [dt, dv] pair (one per element for array values)" % [kloc, h])
+
+
+## A bezier handle: [dt, dv], or one such pair per element of an array value.
+static func _valid_handles(h, value) -> bool:
+	if typeof(value) != TYPE_ARRAY:
+		return _is_pair(h)
+	if typeof(h) != TYPE_ARRAY or h.size() != value.size():
+		return false
+	for pair in h:
+		if not _is_pair(pair):
+			return false
+	return true
+
+
+static func _is_pair(h) -> bool:
+	return typeof(h) == TYPE_ARRAY and h.size() == 2 \
+			and typeof(h[0]) in [TYPE_INT, TYPE_FLOAT] and typeof(h[1]) in [TYPE_INT, TYPE_FLOAT]
+
+
+# ---------- upgrades ----------
+
+## Brings an older (already validated) script up to the current meaning,
+## in place. v1's "cubic" was a per-segment smoothstep, which v2 calls
+## "ease" ("cubic" now runs through the keys like Godot's), so v1 scripts
+## keep moving the way they always did.
+static func _upgrade(root: Dictionary) -> void:
+	if int(root.get("format_version", SUPPORTED_VERSION)) >= 2:
+		return
+	for track in root.get("tracks", []):
+		for kf in track.get("keyframes", []):
+			if typeof(kf) == TYPE_DICTIONARY and kf.get("interp") == "cubic":
+				kf["interp"] = "ease"
 
 
 static func _validate_event(e: Dictionary, loc: String, errors: Array) -> void:
