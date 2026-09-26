@@ -1,8 +1,8 @@
 # VR Studio — Plan and handoff
 
-Working notes for building a VR editor ("Studio") for VJ scripts: edit a piece from inside the headset with wrist tools. This records the decisions made so far, what's done, and what comes next, so work can resume in a fresh session.
+Plan for a VR editor ("Studio") for VJ scripts: build and perform a piece from inside the headset. This records the decisions made so far, what's done, and the design and milestones for what comes next, so work can resume in a fresh session. The design is under *Studio design*.
 
-Branch: `claude/sweet-bardeen-mjgzvk` (commits `8a44787`, `04f3be3` on top of `89d4579`).
+Branch: `claude/sweet-bardeen-mjgzvk` (commits `8a44787`, `04f3be3`, `38e8d22` on top of `89d4579`).
 
 ## Decisions
 
@@ -55,33 +55,198 @@ Rejected alternatives, and why:
   - I broke the importer on purpose to confirm the test catches it.
   - Forest tunnel imported, saved to `.tscn`, reloaded and exported with 0 differences from the original.
 
-## Next: step 3 — Studio
+## Studio design
 
-### 3a. Extract the rendering core from `project_engine/player/main.gd` (about 1,050 lines)
-It mixes two jobs:
-- **Core (Studio needs it):** video bridge, script runner hookup, screen settings / `_apply_screen_settings`, layers (`_rebuild_layers`, `_place_layer`, `_update_layer_anchor`), curvature, projection, XR rig, camera cuts.
-- **Shell (player only):** file open and drop, DLNA, playlist, Whirligig, presets UI, media keys, thumbstick seek and volume, menus.
+### What it's for
+Studio is where a piece gets **staged and performed**, rather than typed. It has to beat the desktop at what the desktop is bad at, and hand everything else back to it:
 
-Move the core into `player/stage/` (a scene plus script), with no change in behaviour. `main.tscn` becomes stage + shell. Check with the player's test suite (all 137 pass), then **on a headset**, because the headless tests can't cover VR.
+| VR is better at | How Studio uses it |
+|---|---|
+| Judging size, depth and curvature at true scale | Everything is placed by hand, in the audience's seat, on the real renderer |
+| Timing to music | Performance recording: move things and turn knobs while the song plays |
+| Seeing what the audience sees | Playback mode *is* the player: same video, audio reactivity and effects |
+| Shaping motion in space | Motion paths drawn in 3D, with keys you grab and move |
 
-### 3b. Studio skeleton
-`project_engine/studio/studio.tscn` = stage + XR rig + studio tools. It opens a script JSON (command-line argument), and writes the JSON back on save (the player's file watcher / reconcile already handles reloading).
+**Left to the desktop:** fine timing across many tracks, typing names and numbers, writing shaders. The desktop route is import → edit → export in Godot (see *Done*); it round-trips losslessly.
 
-Add a second export preset *Studio*, and give the *Player* preset an export filter that excludes `studio/`.
+### Principles
+1. **Two modes, one button.** *Play* is the audience view with no UI. *Edit* shows the tools. Toggling is instant and keeps the playhead, so you can check anything straight away.
+2. **Touch it to change it.** Grab objects directly. Every property sits next to the thing it changes. No mode maps to memorise.
+3. **Time is always visible.** A playhead, the song's waveform with beats, and key markers are in view while editing, so you always know *when* a change lands.
+4. **Nothing is destructive.** Unlimited undo/redo, autosave with versions, and every edit is one command on the JSON.
+5. **Legible and comfortable.** Big targets, readable text, haptic confirmation, no forced movement, works seated or standing.
 
-### 3c. First tool: grab & key
-Make screens and layers `XRToolsPickable`. On release, write a transform keyframe at the playhead into the JSON (make the track if missing; replace a key at the same time). Show ghost markers where the existing keys are.
+### Interface
 
-### Later wrist tools (left wrist panel, right hand acts)
-- **Param knob + record:** twist a hinge or knob (or use the thumbstick) on a shader param. Record mode captures it while the music plays as a dense key stream, then thins it (to linear keys within a tolerance, or to beziers). This is probably the most valuable feature, since hand-keying timing to music is tedious.
-- **Key navigator:** previous / next key, delete key, scrub dial. Needed so mistakes can be fixed.
-- **Cut marker:** drop a `vr_cut` from where you're standing now.
-- **Keep on the desktop, not in VR:** precise timing, easing curves and many-track editing. VR is for recording and nudging; the desktop is for cleanup (via import → edit → export).
+![Studio in Edit mode: a selected curved screen with its motion path, the inspector beside it, the timeline ribbon at waist height, the wrist palette on the left hand and the right hand's pointer](docs/studio/overview.svg)
+
+*Mockups: these show layout and visual language, not final pixels. Their source is `docs/studio/*.svg`.*
+
+**Hands.** The left hand holds the tools; the right hand acts. Left-handed users can swap.
+
+| Input | Edit mode | Play mode |
+|---|---|---|
+| Right trigger | Select / press UI | Play / pause when aimed at a screen (as now) |
+| Right grip | Grab the object under the ray or in the hand | Drag the floating panel (as now) |
+| Both grips, empty hands | Move / turn / scale **yourself** relative to the world (world grab) | — |
+| Grip + other hand's grip on the same object | Two-hand scale and rotate | — |
+| Right stick up/down while grabbing | Push / pull the object along the ray | — |
+| Right stick left/right | Step to previous / next key of the selection | Seek ±10 s (as now) |
+| Right A | Key the selection at the playhead | Play / pause |
+| Right B | Undo (hold: redo) | — |
+| Left menu | Toggle Play / Edit | Toggle Play / Edit |
+| Left stick | Scrub (fine; push further = faster) | Volume / seek (as now) |
+
+The mapping follows the current `xr_rig.gd` signals, so Play mode behaves exactly like today's player.
+
+**Panels.** Each one is a `Viewport2DIn3D`, styled like the existing floating panel. All of them hide in Play mode.
+
+- **Wrist palette** (left forearm, visible when you look at it). It has the mode toggle, the timecode, play/pause and record, **auto-key** on/off (a red ring means it's on), snapping on/off, undo/redo, and save. It also has buttons that open the other panels. It extends today's wrist HUD.
+- **Timeline ribbon**: a wide, gently curved band at waist height (you can move it).
+  - It shows the song's waveform with beat and bar ticks, `vr_cut` markers, the object's lanes (spawn → despawn bars) and key diamonds for the selection.
+  - Grab the playhead to scrub. Pinch with both hands to zoom in time. Drag a diamond to retime a key (it snaps to beats when snapping is on).
+  - Set a loop region (in/out handles) for rehearsing a passage.
+- **Inspector**: follows the selected object at arm's length.
+  - It's generated from the same shader hints the Camera tab already uses (`camera_tab._param_control`), so every hinted uniform gets a slider with no extra work. It covers transform, display (curvature, opacity), the effects stack (add from a menu, reorder by dragging, enable/disable, remove), modifiers and reactive.
+  - Each property has a **key diamond**: filled means there's a key at the playhead, hollow means the property is animated, a dot means it's static. Tap the diamond to add or remove a key.
+  - Colours get a hue/value wheel instead of three sliders.
+- **Asset shelf**: a curved carousel of thumbnails you open from the wrist, organised by type. Grab a thumbnail and **drop it in the world** to spawn it there, at the playhead (see *Assets*).
+- **Outliner**: the object tree (groups, screens, layers, prefabs), with visibility over time. Drag onto a group to parent. Rename with the system keyboard, or by voice later.
+
+<p>
+<img src="docs/studio/wrist_palette.svg" width="46%" alt="Wrist palette: Play/Edit toggle, timecode, previous key, play, record, next key, auto-key (on, red), snap (on), loop, undo, panel buttons and save">
+<img src="docs/studio/inspector.svg" width="40%" alt="Inspector for main_screen: transform fields, display and shader sliders with key diamonds, effects stack with toggles, add effect">
+</p>
+
+![Timeline ribbon: song waveform with beat grid, a cut marker, object lanes with spawn bars and key diamonds, the playhead at 52 s, a loop region, and the interpolation picker open on a key](docs/studio/timeline_ribbon.svg)
+
+![Asset shelf: tabs by type, thumbnail cards on a gentle arc, one card lifted by the pointer to drop into the world](docs/studio/asset_shelf.svg)
+
+**Visual language.**
+- Dark translucent panels, one accent colour for "selected / active" and one red for "recording / keying".
+- Text is at least about 1.2° of view (roughly 2 cm at 1 m), and targets are at least about 2.5 cm.
+- The pointer's hover highlights what will be hit. A short haptic tick confirms a key, a snap, a grab and a drop.
+- The selected object gets an outline plus its pivot and axes. Objects that are animated but off-key show a faint ghost at their next key.
+
+### Moving things around
+- **Direct grab.** The grip takes whatever is in your hand or under the ray, with the grab offset kept, so it doesn't jump. Picking needs colliders: Studio adds a pick box around each spawned object's visual bounds, only in Studio (never in the player).
+- **Two hands.** With both hands on an object, their distance scales it and their rotation turns it. The scale is uniform unless axis lock is on.
+- **Snapping** (toggled on the wrist):
+  - position to a 10 cm grid
+  - rotation to 15°
+  - "face the viewer": turn to face the audience seat
+  - "level": zero roll
+  - scale to 5% steps
+  - align flush to the surface or screen under the ray
+
+  Snapping shows as guides while you drag.
+- **What a drag writes:**
+  - **Auto-key on:** a transform key at the playhead (replacing a key at the same time).
+  - **Auto-key off:** the object's spawn transform, for a static layout. This is the "set up the stage" mode.
+  - The state is always visible (the red ring), and undo reverts either one.
+- **World grab and miniature view.** Move and rotate yourself by gripping empty space. A **miniature** of the whole scene on a table lets you lay out big environments (tunnels, forests) from above, then drop back to full scale with one button.
+- **Audience seat.** A marker shows the player's home pose (and the viewer's cut poses). One button puts you in that seat, which is the only honest place to judge a layout.
+
+### Keyframes and timing
+- **Keying.** Use the inspector diamonds, A for the whole selection, or auto-key while dragging. Keys go into the JSON tracks the exporter already writes: `transform`, and `shader_param` with the `surface` / `layer` / `display` / `effect<N>` / `modifiers` / `reactive` slots.
+- **Interpolation.** Pick per key on the ribbon: *linear, ease, cubic, step* or *bezier*, plus bezier presets (ease-in, ease-out, overshoot). Shape bezier handles on a curve view in the inspector for one property.
+- **Performance recording** is the core advantage.
+  1. Arm properties: the inspector's record dot, or "transform" by grabbing.
+  2. Press record; playback starts from a pre-roll (default 2 s before the loop in-point).
+  3. Move the object or turn the knob while the music plays.
+  4. When you stop, the stream (sampled per frame) is thinned to keys within a tolerance (linear keys, or beziers for smooth moves) and replaces the keys in the recorded range.
+  5. **Punch-in:** only the looped range is overwritten, so you can redo one passage until it's right.
+- **Beat snap.** An offline pass over the song (reusing `AudioAnalyzer`'s spectrum) finds onsets and tempo, giving beat and bar ticks on the ribbon. Key times and drags snap to them. You can nudge the grid if the detection is off.
+- **Motion paths.** The selection's position track is drawn as a 3D curve with a dot per key. Grab a dot to move that key in space. Bezier handles show as small arms you can bend. This is spatial curve editing, which is clumsy on a desktop.
+- **Cuts.** "Cut here" places a `vr_cut` at the playhead from your current head pose, with the transition chosen on the wrist. Cuts show on the ribbon and as seat markers in the world.
+- **Spawning over time.** Dropping an asset spawns it at the playhead. Its lane bar's ends on the ribbon are its spawn and despawn times, so drag them to change when it appears or goes.
+
+### Configuring
+- The inspector covers every `config` field the format has: shader and params, `render_scale` / `resolution`, curvature, opacity, effects (with `enabled`), modifiers (tint, flash, speed, sort offset), and reactive (spin, pulse).
+- Changing a static value with auto-key off edits the spawn config. With auto-key on, it keys a `shader_param` track, like transforms.
+- **Presets.** Save a configured object (prefab + config + effects) as a *look* to the asset shelf, and re-apply it to others. This extends the player's preset idea to objects.
+- **Live audio.** The sound-reactive layers react to the real song while editing, so reactive settings are tuned by ear and eye at once.
+
+### Assets
+- **What the shelf shows:**
+  - built-in screens, layers, cubes and groups
+  - built-in layer shaders and effects (`VisualizerShaders.list_options`)
+  - user shaders (`user://shaders`, `<exe>/shaders`)
+  - custom prefabs (`.tscn` next to the piece or in a library folder)
+  - skyboxes
+  - the piece's own `prefabs/` and `shaders/`
+- **Getting assets in:**
+  - drop files on the desktop window (as the player already accepts)
+  - pick from a folder browser on the wrist (the Files tab already exists)
+  - add watch folders in settings; new files appear on the shelf live (the file watcher already exists)
+  - a Shadertoy `.glsl` is wrapped as today
+- **Self-contained pieces.** Pulling in a custom asset copies it into the piece folder (`prefabs/`, `shaders/`), the same way the exporter bundles them. A piece folder can then be zipped and shared.
+- **Thumbnails.** Shaders and prefabs are rendered to small images offscreen (a few frames, with fake audio) and cached next to the asset. Shaders animate on hover.
+- **Media.** Choose the piece's video from the browser. Its projection (flat, 180, 360) is detected as in the player.
+
+### Playback mode
+- Identical to the player: the same stage, video, audio analysis, effects, cuts and fades. There's no Studio UI and no pick boxes, and nothing is drawn that the audience wouldn't see.
+- Starts from the playhead, or from the loop in-point with pre-roll. It can loop the region.
+- **Seat.** It watches from the audience seat by default (with cuts applied). You can also watch from where you stand, free.
+- **Speed 0.5× / 0.25×** for checking timing (video and animation stay in sync; audio pitch-shifted or muted).
+- **Toggling back to Edit** keeps the playhead exactly, so "see a problem → fix it" is one button.
+- The desktop window mirrors the headset. Optionally it shows a fixed spectator camera for recording demos.
+
+### Saving and safety
+- **One edit model.** All edits go through a command API on an in-memory copy of the JSON: add object, set config, set key, move key, delete, reparent, and so on. Each command knows how to undo itself. The runner is updated from the model:
+  - incrementally for key and config changes (patch one track or node)
+  - through the existing `_reconcile_swap` for structural ones (spawn, despawn, parent)
+- **Saving.** Explicit save from the wrist, plus autosave every minute to `video.json.autosave` and a rotating `.bak` set.
+- **External changes.** If the JSON changes on disk (a Godot export), Studio offers *reload* (you lose unsaved VR edits, with a warning) or *keep mine*.
+- **Always valid.** Studio saves through the same validator (`ScriptFormat`) before writing, so it can't produce a file the player rejects.
+
+### Architecture
+```
+project_engine/
+  player/
+    stage/     ← extracted from main.gd: video, runner, screens/layers, audio, XR rig, cuts
+    app/       ← the player shell (files, DLNA, playlist, whirligig, presets, menus)
+  studio/
+    studio.tscn           stage + studio rig + panels
+    model/ edit_model.gd  JSON document + commands + undo stack (pure data, headless-testable)
+    model/ key_thinning.gd, beat_detect.gd
+    tools/  grab.gd, snap.gd, record.gd, motion_path.gd, cut_tool.gd
+    ui/     wrist_palette, timeline_ribbon, inspector, asset_shelf, outliner (Viewport2DIn3D scenes)
+    assets/ asset_library.gd, thumbnailer.gd
+```
+- Dependencies go one way: `studio/` uses `player/stage/`, and `player/` never references `studio/`.
+- There's a separate export preset *Studio*; the *Player* preset excludes `studio/`.
+- **Testable without a headset:** the edit model, key thinning, beat detection, snapping maths and asset import are pure logic with headless tests (in the same style as the existing suite). Each milestone also has a short headset checklist.
+
+### Milestones
+Each ends in something usable, with a clear "done when".
+
+| # | Milestone | Done when |
+|---|---|---|
+| M0 | **Stage extraction** from `main.gd` (no behaviour change) | 137 tests pass; the player works unchanged on a headset |
+| M1 | **Studio skeleton**: open a piece, Play/Edit toggle, save, undo/redo, edit model with tests | Open forest_tunnel, toggle modes, save → the file is byte-identical when nothing changed |
+| M2 | **Select and move**: pick boxes, ray/direct grab, two-hand, snapping, auto-key, audience seat | Re-lay out moving_screen by hand; auto-key keys play back right in the player |
+| M3 | **Inspector**: hint-generated params, effects stack, key diamonds, colour wheel | Retune a screen's glow and add/reorder effects without touching the desktop |
+| M4 | **Timeline ribbon**: waveform, lanes, key diamonds, retime, loop region, interpolation picker | Retime a key to a beat by dragging; loop a passage |
+| M5 | **Asset shelf**: library, thumbnails, drag-to-spawn, bundling into the piece | Start from an empty piece and build a scene only from the shelf; the folder zips and plays elsewhere |
+| M6 | **Performance recording + beat snap** | Record a knob sweep to the music, punch-in a fix, and it plays back tight |
+| M7 | **Motion paths + cuts tool + miniature view** | Reshape a camera-facing screen's path in space; place cuts from the seat |
+| M8 | **Polish**: haptics, comfort, visual pass, left-handed mode, looks/presets | A first-time user can place, key and play back a screen in 10 minutes unaided |
+
+M1–M3 are the smallest thing that's already better than the desktop for layout. M6 is the feature that makes Studio worth opening.
 
 ### Prerequisites and risks
-- **Phase 4b headset checklist:** the wrist HUD, and pointer clicks in every menu tab, aren't recorded as confirmed. Make the pointer UI solid before adding editing tools on top.
-- **Seeking back past a cut:** the player doesn't restore the camera when seeking back past a `vr_cut` or the t=0 start-pose cut. That will matter for editing.
-- **`_read_transform` in `script_runner.gd`:** it builds `Basis.from_euler(rot).scaled(scl)`. `scaled` applies scale on global axes, while Godot nodes (and the importer) use rotation × local scale. With non-uniform scale plus rotation the player may not match the editor. Verify before Studio writes transforms.
+- **Phase 4b headset checklist:** the wrist HUD, and pointer clicks in every menu tab, aren't recorded as confirmed. Make pointer UI solid before M2.
+- **Seeking back past a cut:** the player doesn't restore the camera when seeking back past a `vr_cut` or the t=0 start-pose cut. Studio scrubs constantly, so fix this in M1 (camera state from the latest cut at or before the playhead).
+- **`_read_transform` in `script_runner.gd`:** it builds `Basis.from_euler(rot).scaled(scl)`. `scaled` scales on global axes, while nodes (and the importer) use rotation × local scale. With non-uniform scale plus rotation, what Studio writes wouldn't play back the same. Fix before M2 (with a test).
+- **Performance with many edits:** a full reconcile per drag frame is too slow. The edit model has to patch the runner incrementally (M1 design point). Recording writes to a buffer and commits once at the end.
+- **Readable UI in the headset:** the `Viewport2DIn3D` resolution and panel distance need tuning per headset. Budget time in M8, and check text size from M1 on.
+- **Beat detection quality** varies by genre. The ribbon's grid must be adjustable by hand (tap tempo, offset).
+
+### Open questions
+- **Target headsets and runtime:** Quest over Link/Air Link via SteamVR/OpenXR, or Index/others? This decides the button labels and whether hand tracking is worth adding.
+- **Where shared assets live:** one library folder per user, or per project?
+- **Should Studio also open plain videos**, to start a new piece from a video file (create `clip.json` next to it)? I'd say yes. It's the natural "new piece" flow.
 
 ## Known issues
 - All 137 player tests pass, as does the round-trip test.
