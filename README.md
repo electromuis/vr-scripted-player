@@ -58,7 +58,7 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
 
 ## Studio (the VR editor, early)
 
-Studio opens a script and lets you change it from inside the headset, on the player's own renderer, so what you see while editing is what the player will show. It's being built in steps (see [VR Studio — Plan.md](./VR%20Studio%20%E2%80%94%20Plan.md)); so far it opens a piece, plays and scrubs it, switches between Play and Edit, undoes and redoes, and saves. Moving things by hand comes next.
+Studio opens a script and lets you change it from inside the headset, on the player's own renderer, so what you see while editing is what the player will show. It's being built in steps (see [VR Studio — Plan.md](./VR%20Studio%20%E2%80%94%20Plan.md)); so far it opens a piece, plays and scrubs it, switches between Play and Edit, selects and moves things by hand (keyed or not), undoes and redoes, and saves. An inspector for configs and effects comes next.
 
 - **Start it** from the same build as the player, with Studio's scene and the piece: `VRmviewer.exe res://studio/studio.tscn -- --piece path\to\video.json` (or `build_and_run.bat studio [video.json]`). A video with a same-name `.json` next to it works as the piece too; `--start <seconds>` opens at that time, `--vr` / `--desktop` as in the player.
 - **Play and Edit:** Play is the audience view with nothing added. Edit shows the piece's name, the time, whether there are unsaved changes and what just happened, on the left wrist in the headset and in the corner of the desktop window. Switching keeps the playhead.
@@ -76,12 +76,28 @@ Studio opens a script and lets you change it from inside the headset, on the pla
   | Save | | Ctrl+S |
   | Reset view (the home seat) | right stick click | R |
   | Enter / leave VR | | F1 |
+  | **Edit mode:** | | |
+  | Select what you point at | right trigger | left click |
+  | Grab and move (hold) | right grip | left drag |
+  | Both hands: scale and turn | left grip too | |
+  | Push / pull while grabbing | right stick ↑ ↓ | mouse wheel while dragging |
+  | Key the selection here | A | I |
+  | Auto-key on / off | wrist | Shift+I |
+  | Snapping on / off | wrist | Shift+G |
+  | Go to the selection / back | wrist | F / Shift+F |
+  | Audience seat | wrist | 0 |
+  | Deselect | wrist | Esc |
+  | Fly (where you look) | left stick | WASD, E / Q |
+  | Snap turn / rise, sink | right stick ← → / ↑ ↓ | |
 
-  In Edit mode on the desktop, WASD flies, E goes up and Q down, and the right mouse button looks around.
+  In Edit mode A and the right stick key and fly instead of playing and seeking; play from the wrist or scrub with left trigger + stick. On the desktop the right mouse button looks around.
+- **Moving things:** point and pull the right trigger to select (a yellow box with its axes), hold the grip to carry it; the left grip as well scales and turns it with both hands. One grab is one undo step. With **auto-key** off (the default), a move changes where the object is placed, or, if it's already animated, shifts its whole path so the motion keeps its shape. With auto-key on (red chip), a move keys position / rotation / scale at the playhead. **Snapping** (blue chip) rounds to 10 cm, 15° and 5 % and shows a grid while you carry. The wrist palette (left wrist) has buttons for all of it, plus undo, redo, save and the seat, which puts you where the audience is at this moment (marked in the world with a ring and an arrow).
 - **Saving:** Ctrl+S writes the piece back to its `.json`, after checking it with the player's own validator (an edit that would make it invalid isn't saved, and the status says why). Opening and saving without changes, or after undoing them all, leaves the file byte for byte as it was. After edits it's written with the file's own indentation and key order; a version 1 script is saved as version 2. There's no autosave yet, and closing Studio doesn't ask about unsaved changes.
 - Studio doesn't follow changes other programs make to the file while it's open (a Godot export, say); reopen the piece to see them.
 
 ![Studio: Edit mode on the desktop and on the wrist, Play mode, a keyed move of the screen rig, undo, and the glow switched off](docs/studio/m1_studio.png)
+
+![Studio moving things: nothing selected, carrying the cube, the snap grid, auto-key on the screen, the desktop status, the wrist palette](docs/studio/m2_studio.png)
 
 ## Prerequisites
 

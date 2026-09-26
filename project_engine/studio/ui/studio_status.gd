@@ -9,7 +9,7 @@ extends PanelContainer
 const ACCENT := Color(0.3, 0.79, 0.94)
 const RECORD := Color(1.0, 0.36, 0.36)
 const DIM := Color(0.72, 0.75, 0.8)
-const HINTS := "Tab  Play / Edit     Space  play / pause     ← →  1 s     Shift+← →  10 s     Home  start\nCtrl+Z  undo     Ctrl+Shift+Z  redo     Ctrl+S  save     R  reset view     F1  VR"
+const HINTS := "Tab  Play / Edit     Space  play / pause     ← →  1 s     Shift+← →  10 s     Home  start\nCtrl+Z  undo     Ctrl+Shift+Z  redo     Ctrl+S  save     R  reset view     F1  VR\nClick  select     Drag  move (wheel: nearer / further)     I  key it     Shift+I  auto-key     Shift+G  snap     F  go to it     0  seat     Shift+F  back     Esc  deselect"
 
 ## Wrist layout: bigger text, no keyboard hints.
 @export var compact: bool = false
@@ -20,6 +20,8 @@ var _dirty: Label
 var _time: Label
 var _message: Label
 var _hints: Label
+var _auto_key: Label
+var _snap: Label
 
 
 func _ready() -> void:
@@ -58,12 +60,33 @@ func _ready() -> void:
 		_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_dirty = _label(top, size, RECORD)
 
+	var toggles := HBoxContainer.new()
+	toggles.add_theme_constant_override("separation", 10)
+	rows.add_child(toggles)
+	_auto_key = _chip(toggles, size, "● AUTO-KEY", RECORD)
+	_snap = _chip(toggles, size, "SNAP", ACCENT)
 	_time = _label(rows, int(size * 1.5), Color.WHITE)
 	_message = _label(rows, size, DIM)
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	if not compact:
 		_hints = _label(rows, 14, DIM)
 		_hints.text = HINTS
+
+
+## A small outlined tag, shown while its toggle is on.
+func _chip(parent: Control, font_size: int, text: String, color: Color) -> Label:
+	var l := _label(parent, int(font_size * 0.8), color)
+	l.text = text
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(color, 0.15)
+	sb.border_color = color
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	l.add_theme_stylebox_override("normal", sb)
+	l.visible = false
+	return l
 
 
 static func _spacer() -> Control:
@@ -81,9 +104,13 @@ func _label(parent: Control, font_size: int, color: Color) -> Label:
 
 
 ## Everything at once; cheap enough to call every frame.
-func show_state(mode: String, title: String, dirty: bool, t: float, duration: float, playing: bool, message: String) -> void:
+func show_state(mode: String, title: String, dirty: bool, t: float, duration: float, playing: bool, message: String,
+		auto_key: bool = false, snap: bool = false) -> void:
 	if _mode == null:
 		return
+	_auto_key.visible = auto_key and mode == "EDIT"
+	_snap.visible = snap and mode == "EDIT"
+	_auto_key.get_parent().visible = _auto_key.visible or _snap.visible
 	_mode.text = mode
 	_title.text = title
 	_dirty.text = "● unsaved" if dirty else ""

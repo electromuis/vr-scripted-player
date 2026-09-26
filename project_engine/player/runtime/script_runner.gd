@@ -58,6 +58,9 @@ var _reactive: Dictionary = {}
 const _MODS_META := "_vj_mods"
 ## Target id of the camera effect's tracks (`$camera.effect0`).
 const CAMERA_TARGET := "$camera"
+## ids an editor is holding (dragging): their transform tracks and
+## reactive motion aren't applied, so the editor's live move shows.
+var held: Dictionary = {}
 ## slot ("effect0") -> {param: value} from `$camera` tracks at the playhead.
 var _camera_params: Dictionary = {}
 var _mods_lookup := func(n: Node) -> Dictionary: return n.get_meta(_MODS_META, {})
@@ -473,11 +476,16 @@ func _reactive_begin() -> void:
 		if not is_instance_valid(state.node) or not _registry.has_id(id):
 			_reactive.erase(id)
 			continue
+		if held.has(id):
+			continue
 		Modifiers.begin_frame(state.node, state)
 
 
 func _reactive_end() -> void:
-	for state in _reactive.values():
+	for id in _reactive.keys():
+		if held.has(id):
+			continue
+		var state: Dictionary = _reactive[id]
 		var spin_at := func(t: float) -> Vector3:
 			if state.spin_kfs.is_empty():
 				return state.spin
@@ -578,6 +586,8 @@ func _evaluate_continuous_tracks() -> void:
 
 func _apply_transform_track(track: Dictionary) -> void:
 	var target: String = String(track.get("target", ""))
+	if held.has(target):
+		return
 	var node := _registry.get_node_by_id(target)
 	if node == null:
 		return
@@ -672,11 +682,14 @@ func camera_effect() -> Dictionary:
 	return {"key": _shader_path(String(e.get("shader", ""))), "params": params, "strength": strength}
 
 
-func _read_transform(t: Dictionary) -> Transform3D:
+## A spawn transform as a node's: rotation, then scale along the object's
+## own axes (Node3D's rotation / scale, and what the exporter writes).
+## Basis.scaled() would scale along the world axes instead, which only
+## agrees for uniform scale.
+static func _read_transform(t: Dictionary) -> Transform3D:
 	var pos := Interpolation.to_vec3(t.get("position", [0, 0, 0]))
 	var rot_deg := Interpolation.to_vec3(t.get("rotation_deg", [0, 0, 0]))
 	var scl_arr = t.get("scale", [1, 1, 1])
 	var scl := Interpolation.to_vec3(scl_arr) if typeof(scl_arr) == TYPE_ARRAY else Vector3.ONE
 	var basis := Basis.from_euler(Vector3(deg_to_rad(rot_deg.x), deg_to_rad(rot_deg.y), deg_to_rad(rot_deg.z)))
-	basis = basis.scaled(scl)
-	return Transform3D(basis, pos)
+	return Transform3D(basis * Basis.from_scale(scl), pos)

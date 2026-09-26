@@ -86,6 +86,18 @@ const COMMANDS := {
 	"studio_undo": {"label": "Undo", "context": "studio_edit", "app": "studio"},
 	"studio_redo": {"label": "Redo", "context": "studio_edit", "app": "studio"},
 	"studio_scrub": {"label": "Scrub (further = faster)", "context": "studio_edit", "kind": "axis", "app": "studio"},
+	"studio_select": {"label": "Select what you point at", "context": "studio_edit", "app": "studio"},
+	"studio_grab": {"label": "Grab (hold)", "context": "studio_edit", "kind": "held", "app": "studio"},
+	"studio_grab_left": {"label": "Grab with the other hand (hold; both: scale and turn)", "context": "studio_edit", "kind": "held", "app": "studio"},
+	"studio_key_selection": {"label": "Key the selection here", "context": "studio_edit", "app": "studio"},
+	"studio_toggle_autokey": {"label": "Auto-key on / off", "context": "studio_edit", "app": "studio"},
+	"studio_toggle_snap": {"label": "Snapping on / off", "context": "studio_edit", "app": "studio"},
+	"studio_seat": {"label": "Go to the audience seat", "context": "studio_edit", "app": "studio"},
+	"studio_goto_selection": {"label": "Go to the selection", "context": "studio_edit", "app": "studio"},
+	"studio_jump_back": {"label": "Back to where you were", "context": "studio_edit", "app": "studio"},
+	"studio_deselect": {"label": "Deselect", "context": "studio_edit", "app": "studio"},
+	"studio_fly": {"label": "Fly", "context": "studio_edit", "kind": "axis", "app": "studio"},
+	"studio_right_stick": {"label": "Turn, rise / sink; while grabbing: push / pull", "context": "studio_edit", "kind": "axis", "app": "studio"},
 }
 
 ## Today's player, button for button.
@@ -121,6 +133,18 @@ const DEFAULTS := {
 	"studio_undo": [{"input": "R.by"}, {"input": "key:Ctrl+Z"}],
 	"studio_redo": [{"input": "R.by", "gesture": "hold"}, {"input": "key:Ctrl+Shift+Z"}, {"input": "key:Ctrl+Y"}],
 	"studio_scrub": [{"input": "L.stick", "modifier": "L.trigger"}],
+	"studio_select": [{"input": "R.trigger"}],
+	"studio_grab": [{"input": "R.grip"}],
+	"studio_grab_left": [{"input": "L.grip"}],
+	"studio_key_selection": [{"input": "R.ax"}, {"input": "key:I"}],
+	"studio_toggle_autokey": [{"input": "key:Shift+I"}],
+	"studio_toggle_snap": [{"input": "key:Shift+G"}],
+	"studio_seat": [{"input": "key:0"}],
+	"studio_goto_selection": [{"input": "key:F"}],
+	"studio_jump_back": [{"input": "key:Shift+F"}],
+	"studio_deselect": [{"input": "key:Escape"}],
+	"studio_fly": [{"input": "L.stick"}],
+	"studio_right_stick": [{"input": "R.stick"}],
 }
 
 const _BUTTON_NAMES := {

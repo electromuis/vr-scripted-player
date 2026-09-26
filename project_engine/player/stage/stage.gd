@@ -152,6 +152,37 @@ func reset_view() -> void:
 
 
 ## Seek now, and again once the video has opened if it is still opening.
+## Where the audience sits at the playhead: the cut in effect, else home.
+## {position: Vector3, yaw_deg: float}.
+func seat_pose() -> Dictionary:
+	var cut := runner.cut_at_playhead()
+	if not cut.is_empty():
+		var to: Dictionary = cut.get("to", {})
+		return {"position": Interpolation.to_vec3(to.get("position", [0, 0, 0])),
+				"yaw_deg": Interpolation.to_vec3(to.get("rotation_deg", [0, 0, 0])).y}
+	return {"position": _home_pos, "yaw_deg": _home_yaw_deg}
+
+
+## Put the viewer (the headset in VR, the desktop camera otherwise) at
+## `pos`, facing `yaw_deg`, level. In VR `keep_floor` leaves the real floor
+## at world height 0 (the audience seat); otherwise the head goes to
+## `pos.y` (flying up to something).
+func put_viewer(pos: Vector3, yaw_deg: float, keep_floor: bool = true) -> void:
+	if xr_mode.is_in_vr():
+		xr_rig.recenter(pos, yaw_deg)
+		if not keep_floor:
+			xr_rig.global_position.y += pos.y - xr_rig.xr_camera.global_position.y
+	else:
+		desktop_camera.set_view(pos, Vector3(0.0, yaw_deg, 0.0))
+
+
+## The viewer's eye now: the headset in VR, else the desktop camera.
+func viewer_transform() -> Transform3D:
+	if xr_mode.is_in_vr():
+		return xr_rig.xr_camera.global_transform
+	return desktop_camera.global_transform
+
+
 func seek_to(t: float) -> void:
 	runner.seek(t)
 	if (video != null and video.is_loading()) or runner.effective_duration() <= 0.0:

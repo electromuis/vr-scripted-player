@@ -334,3 +334,17 @@ static func test_reached_end_waits_for_duration(tc: TestCase) -> void:
 	runner.tick(6.0)
 	tc.assert_eq(ends[0], 1)
 	stage.queue_free()
+
+
+## A spawn transform means what Node3D's rotation / scale do: scale along
+## the object's own axes. Rotated 90° about Z and stretched 2× on its X,
+## the object is 2 wide along world Y, not world X.
+static func test_spawn_transform_scales_along_own_axes(tc: TestCase) -> void:
+	var xf := ScriptRunner._read_transform({"position": [1, 2, 3], "rotation_deg": [0, 0, 90], "scale": [2, 1, 1]})
+	var node := Node3D.new()
+	node.transform = xf
+	tc.assert_true(node.scale.is_equal_approx(Vector3(2, 1, 1)), "scale %s" % node.scale)
+	tc.assert_true(node.rotation_degrees.is_equal_approx(Vector3(0, 0, 90)), "rotation %s" % node.rotation_degrees)
+	tc.assert_true((xf.basis * Vector3.RIGHT).is_equal_approx(Vector3(0, 2, 0)), "own X points up, 2 long: %s" % (xf.basis * Vector3.RIGHT))
+	tc.assert_true(xf.origin.is_equal_approx(Vector3(1, 2, 3)))
+	node.free()

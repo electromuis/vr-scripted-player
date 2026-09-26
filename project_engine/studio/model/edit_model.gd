@@ -37,6 +37,10 @@ var _redo: Array = []
 var _saved_depth: int = 0
 var _loaded_depth: int = 0
 var _original_text: String = ""
+## While batch() runs: its commands' changes, gathered into one undo step.
+var _batching := false
+var _batch_changes: Array = []
+var _batch_structural := false
 var _indent: String = "  "
 
 
@@ -207,12 +211,27 @@ func find_track(type: String, target: String, name: String) -> int:
 # ---------- commands ----------
 # Each returns false (and changes nothing) if it doesn't apply.
 
-## Where `id` spawns: {position, rotation_deg, scale}, any subset.
+## Where `id` spawns: {position, rotation_deg, scale}, any subset. Every
+## spawn of `id` (a piece can bring an object back later) moves together.
 func set_spawn_transform(id: String, transform: Dictionary) -> bool:
-	var i := spawn_index(id)
-	if i < 0:
+	var changes: Array = []
+	var list := tracks()
+	for i in list.size():
+		if list[i].get("type") == "event" and list[i].get("action") == "spawn" and list[i].get("id") == id:
+			changes.append(_change(["tracks", i, "transform"], transform))
+	if changes.is_empty():
 		return false
-	return _do("Move %s" % id, true, [_change(["tracks", i, "transform"], transform)])
+	return _do("Move %s" % id, true, changes)
+
+
+## Replace track `ti`'s keys (e.g. a path shifted as a whole).
+func set_keyframes(ti: int, kfs: Array, label: String = "") -> bool:
+	if _keyframes(ti) == null or kfs.is_empty():
+		return false
+	var track: Dictionary = tracks()[ti]
+	if label == "":
+		label = "Edit %s %s" % [track.get("target", ""), track.get("channel", track.get("param", ""))]
+	return _do(label, _is_structural_track(track), [_change(["tracks", ti, "keyframes"], kfs)])
 
 
 ## A value in `id`'s spawn config: `key` is a field ("opacity") or a path
@@ -427,6 +446,23 @@ func _removal(p: Array) -> Dictionary:
 	return {"path": p, "had_old": had, "old": _copy(_value_at(p)) if had else null, "has_new": false, "new": null}
 
 
+## Several commands as one undo step (a drag that keys three channels):
+## `body` runs them; `changed` fires once, after. False if nothing changed.
+func batch(label: String, body: Callable) -> bool:
+	if _batching:
+		body.call()  # nested: part of the outer batch
+		return true
+	_batching = true
+	_batch_changes = []
+	_batch_structural = false
+	body.call()
+	_batching = false
+	if _batch_changes.is_empty():
+		return false
+	_record(label, _batch_structural, _batch_changes)
+	return true
+
+
 ## Apply a new command. Nothing happens (and false) if it changes nothing.
 func _do(label: String, structural: bool, changes: Array) -> bool:
 	changes = changes.filter(func(c): return c.had_old != c.has_new or JSON.stringify(c.old) != JSON.stringify(c.new))
@@ -434,6 +470,16 @@ func _do(label: String, structural: bool, changes: Array) -> bool:
 		return false
 	for c in changes:
 		_put(c.path, c.has_new, c.new)
+	if _batching:
+		_batch_changes.append_array(changes)
+		_batch_structural = _batch_structural or structural
+		return true
+	_record(label, structural, changes)
+	return true
+
+
+## Push an applied command onto the undo stack and tell listeners.
+func _record(label: String, structural: bool, changes: Array) -> void:
 	_undo.append({"label": label, "structural": structural, "changes": changes})
 	if _redo.size() > 0:
 		_redo.clear()
@@ -443,7 +489,6 @@ func _do(label: String, structural: bool, changes: Array) -> bool:
 		if _loaded_depth >= _undo.size():
 			_loaded_depth = -1
 	changed.emit(structural)
-	return true
 
 
 func _value_at(p: Array):

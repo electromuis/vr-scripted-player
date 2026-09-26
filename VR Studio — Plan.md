@@ -98,22 +98,34 @@ Rejected alternatives, and why:
 - **Not verified:** anything in a headset: the wrist status's size and legibility, ≡ / B / hold B / left trigger + stick on real controllers, and whether the swapped wrist scene takes pointer input (it has no buttons yet).
 - **Left for later:** autosave and the unsaved-changes prompt on quit, reacting to external file changes (*reload* / *keep mine*), coalescing drags into one undo step (M2), Studio's own Controls screen, and a minimal-diff writer (edited saves reformat numbers, e.g. `0` → `0.0`).
 
-## Next: M2, select and move
-Goal (see *Milestones*): re-lay out moving_screen by hand, flying around it; auto-key keys play back right in the player.
+### Select and move (milestone M2)
+- **Prerequisite fixed:** `ScriptRunner._read_transform` (now static) builds rotation × *local* scale, like nodes and the importer (test: non-uniform scale plus rotation). The Phase 4b pointer check is still open (see *Not verified*).
+- **Picking** (`studio/tools/picker.gd`, `StudioPicker`): no `Area3D`s; a ray against each object's local box (`local_bounds`: its meshes' AABBs chained through their transforms, skipping hidden nodes and other objects' subtrees, so a group picks as itself and a child as the child). The nearest box the ray enters wins; if you're inside every box it hits (the forest you stand in), the smallest of those. Works outside the tree, so it's tested headless.
+- **Grab maths** (`studio/tools/grab_math.gd`, `GrabMath`, pure): grip offset (no jump on grab), carried, push / pull along the hand's ray (never nearer than 10 cm), two hands (scale by the change in their distance, turn with the line between them, about the midpoint), `to_local` for grouped objects, `to_dict` / `from_dict` in the format's position / rotation_deg / scale.
+- **Snapping** (`studio/tools/snap.gd`, `StudioSnap`): 10 cm grid, 15°, 5 % scale (never to zero), `level`, `face_yaw`; a snap grid is drawn around the object while grabbing.
+- **Edit tools** (`studio/tools/edit_tools.gd`, `StudioEditTools`): selection (box + pivot axes), grab with either hand or both, push, release, cancel, *key it* (position / rotation / scale at the playhead, one step). While held the runner leaves the object alone (`ScriptRunner.held`: its tracks and reactive spin pause), so nothing fights the hand. **One undo step per grab** (`EditModel.batch(label, body)`: nested calls join, one `changed` notice, an empty batch isn't recorded), which replaces the begin / update / commit idea: the node moves freely during the grab and the model gets one batch on release.
+  - **Auto-key on:** keys at the playhead on the channels that changed. **Off:** a static channel changes the spawn transform (every spawn event of the id); an animated one shifts its whole path (position / rotation add the difference, scale multiplies, handles included) via `EditModel.set_keyframes`, so the motion keeps its shape and the spawn stays put.
+- **Flight** (`studio/tools/flight.gd`, `StudioFlight`, headset only; the desktop keeps WASD / E / Q): left stick flies where you look, speed squared up to 4 m/s; right stick snap-turns 30° about the head and rises / sinks, unless a grab is on (then it pushes / pulls). A black vignette quad on the camera eases in with speed. Built on the router's axes rather than `XRMovement`.
+- **Seat and jumps** (`Stage.seat_pose()` / `put_viewer()` / `viewer_transform()`): *Seat* puts you at the viewer's pose at the playhead (the cut in effect, else home), shown in the world as a ring, line and arrow; *Go to it* puts you at arm's length from the selection (from the side you were on, at least 1.2 m, further for big things), facing it; *Back* returns to where you were before the last jump.
+- **Wrist palette v1** (`studio/ui/wrist_palette.tscn`): the compact status (now with AUTO-KEY and SNAP chips) above twelve buttons: Play / Edit, play, key it, auto-key, snap, undo, redo, save, seat, go to it, back, deselect. They send the same commands as the controls.
+- **Controls:** new `studio_edit` commands (see the README table); in Edit that context owns A (key it) and the right stick (turn / rise), so play / pause and seek there go through the wrist and scrubbing. Desktop: click selects, drag moves in the view plane, the wheel pushes / pulls while dragging, I / Shift+I / Shift+G / F / 0 / Shift+F / Esc. No binding clashes (the existing test).
+- **Proof:** 187/187 tests (new `test_studio_tools.gd`, 10: grab, push, two hands, dict round trip, snapping, picking nearest / inside / turned / nested, batch undo, held runner; plus the `_read_transform` test). `checks/drive_studio_m2.gd` copies moving_screen to `$WORK/studio_m2_piece` and drives Studio with a simulated right controller through the router: picks cube / screen / sky, a move with auto-key off (spawn changes; undo / redo), snapped (lands on −0.9, 1.1, 0), two hands apart ×2, push 1 m, auto-key on lifting the screen at 10 s (one new key), auto-key off shifting its whole path by 1 m, A keying the cube, F / 0 / Shift+F, and (rendered) a mouse drag of the cube 1 m left; saves (valid) and opens the file in the **player**, which shows the cube at 2× and the screen at the keyed spot. `drive.gd`, `drive_controls.gd`, `drive_stage.gd`, `drive_studio.gd`, `drive_script_fx.gd` still run clean. Renders: `docs/studio/m2_studio.png`.
+- **Not verified (no headset):** grabbing with real controllers and how the offsets feel, flight speed and the vignette, snap turn, the wrist palette's size and whether its buttons take pointer clicks (the swapped wrist scene with XR Tools' pointer; the Phase 4b check), and the seat marker's scale.
+- **Left for later:** world grab (both grips on nothing: move / turn / scale yourself), the miniature view, *level* / *face the viewer* buttons (the maths is in `StudioSnap`), grab boost, hand-proximity picking (only the ray now), Studio's Controls screen.
+
+## Next: M3, inspector
+Goal (see *Milestones*): retune a screen's glow and add / reorder effects without touching the desktop.
 
 **Before starting**
-- **Fix `_read_transform`** in `script_runner.gd` (see *Prerequisites and risks*): rotation × local scale, as nodes and the importer do. Test with non-uniform scale plus rotation.
-- **Pointer UI:** the Phase 4b wrist / menu pointer clicks aren't confirmed on a headset; M2 adds wrist buttons, so check `XRToolsViewport2DIn3D` input on the swapped wrist scene with a driven pointer in a check.
+- If a headset turns up, run the M2 list under *Not verified* first; above all, pointer clicks on the wrist palette, since the inspector is all pointer UI.
 
 **Steps**
-1. **Pick boxes** (Studio only): an `Area3D` + box around each spawned object's visual AABB, rebuilt on spawn; ray and hand-proximity picking; a selection with an outline and pivot axes.
-2. **Grab** (`studio/tools/grab.gd`, maths pure and tested): right grip moves the picked object keeping the grab offset; right stick up/down pushes / pulls along the ray; two-hand scale and rotate. One undo step per grab (the model gets a *begin / update / commit* for continuous edits, patching the runner without new undo entries until commit).
-3. **What a drag writes:** auto-key off → `set_spawn_transform` (converted into the parent's space for grouped objects); auto-key on → `set_key` on position / rotation_deg / scale at the playhead. Wrist toggle with the red ring.
-4. **Snapping** (`snap.gd`, tested): 10 cm grid, 15°, 5 % scale, level, face the viewer; guides while dragging.
-5. **Noclip flight** in Edit: extend `XRMovement` free mode with gaze-directed and vertical movement, speed curve, grip boost, comfort vignette; snap turn on the right stick.
-6. **Jump buttons and the seat:** *Seat* (the viewer's pose at the playhead: home or the cut in effect), *Go to selection*, *Back*; a seat marker in the world.
-7. **Wrist palette v1:** mode, time, play, auto-key, snap, undo / redo, save, seat, with Studio's commands behind the buttons.
-8. **Prove it:** tests for grab / snap maths and the continuous-edit API; `drive_studio_m2.gd` that selects and drags objects in moving_screen with simulated controllers (auto-key on and off), saves, and plays the result in the player; renders of the selection, guides and wrist palette.
+1. **Inspector panel** (`studio/ui/inspector.tscn`, a `Viewport2DIn3D` that follows the selection at arm's length, and a desktop side panel from the same scene): transform fields, then the object's config.
+2. **Hint-generated params:** reuse `camera_tab._param_control` for every hinted uniform of the object's shader and of each effect; colours get a colour wheel.
+3. **Effects stack:** add from a menu, reorder, enable / disable (`enabled: false`), remove; all through new `EditModel` commands with undo, structural where the runner must respawn.
+4. **Key diamonds:** filled = key at the playhead, hollow = animated, dot = static; tap to add / remove a key. With auto-key on, changing a value keys a `shader_param` track; off, it edits the spawn config (as transforms do in M2).
+5. **Display and modifiers:** curvature, opacity, render scale / resolution, tint, flash, speed, sort offset, reactive spin / pulse.
+6. **Prove it:** model tests for the new commands; a drive check that selects the screen in forest_tunnel, retunes the glow, adds and reorders an effect, keys a param, saves and plays it in the player; renders of the inspector on the desktop and the wrist.
 
 ## Studio design
 
@@ -369,7 +381,7 @@ Each ends in something usable, with a clear "done when".
 |---|---|---|
 | M0 ✅ | **Stage extraction** from `main.gd` (no behaviour change) | All tests pass and the checks match the previous version; the player works unchanged on a headset (not yet tried) |
 | M1 ✅ | **Studio skeleton**: open a piece, Play/Edit toggle, save, undo/redo, edit model with tests | Open forest_tunnel, toggle modes, save → the file is byte-identical when nothing changed |
-| M2 | **Select and move**: pick boxes, ray/direct grab, two-hand, snapping, auto-key, noclip flight, jump buttons, audience seat | Re-lay out moving_screen by hand, flying around it; auto-key keys play back right in the player |
+| M2 ✅ | **Select and move**: pick boxes, ray/direct grab, two-hand, snapping, auto-key, noclip flight, jump buttons, audience seat | Re-lay out moving_screen by hand, flying around it; auto-key keys play back right in the player |
 | M3 | **Inspector**: hint-generated params, effects stack, key diamonds, colour wheel | Retune a screen's glow and add/reorder effects without touching the desktop |
 | M4 | **Timeline ribbon**: waveform, lanes, key diamonds, retime, loop region, interpolation picker | Retime a key to a beat by dragging; loop a passage |
 | M5 | **Asset shelf**: library, thumbnails, drag-to-spawn, bundling into the piece | Start from an empty piece and build a scene only from the shelf; the folder zips and plays elsewhere |
@@ -385,9 +397,9 @@ M1–M3 are the smallest thing that's already better than the desktop for layout
 **IN and FX don't depend on Studio**; IN should land before M2, since Studio's controls build on it. FX can be built any time, even before M0: it's a player feature, testable on the desktop first. Its first step is a headset check that `hint_screen_texture` works per eye with the quad approach.
 
 ### Prerequisites and risks
-- **Phase 4b headset checklist:** the wrist HUD, and pointer clicks in every menu tab, aren't recorded as confirmed. Make pointer UI solid before M2.
+- **Phase 4b headset checklist:** the wrist HUD, and pointer clicks in every menu tab, aren't recorded as confirmed. Still open after M2 (the wrist palette has buttons now); check before M3's inspector.
 - ~~**Seeking back past a cut**~~: done in M1 (the Stage restores the cut in effect after a seek).
-- **`_read_transform` in `script_runner.gd`:** it builds `Basis.from_euler(rot).scaled(scl)`. `scaled` scales on global axes, while nodes (and the importer) use rotation × local scale. With non-uniform scale plus rotation, what Studio writes wouldn't play back the same. Fix before M2 (with a test).
+- ~~**`_read_transform` in `script_runner.gd`**~~: fixed before M2 (rotation × local scale, tested).
 - **Performance with many edits:** a full reconcile per drag frame is too slow. The edit model has to patch the runner incrementally (M1 design point). Recording writes to a buffer and commits once at the end.
 - **Readable UI in the headset:** the `Viewport2DIn3D` resolution and panel distance need tuning per headset. Budget time in M8, and check text size from M1 on.
 - **Beat detection quality** varies by genre. The ribbon's grid must be adjustable by hand (tap tempo, offset).
