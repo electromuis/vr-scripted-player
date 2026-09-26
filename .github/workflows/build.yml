@@ -14,6 +14,12 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  # Caches are per branch, but every branch can read master's. This keeps
+  # master's gde_gozen caches from expiring (GitHub drops caches unused for
+  # 7 days) so new branches start with a cache hit. Scheduled runs only
+  # restore/rebuild gde_gozen; they don't test, export or package.
+  schedule:
+    - cron: "23 4 * * 1"
 
 concurrency:
   group: build-${{ github.ref }}
@@ -167,6 +173,7 @@ jobs:
 
   test:
     name: Tests
+    if: github.event_name != 'schedule'
     needs: [gozen-ref, gozen]
     runs-on: ubuntu-24.04
     steps:
@@ -191,6 +198,7 @@ jobs:
 
   package:
     name: Export and package
+    if: github.event_name != 'schedule'
     needs: [gozen-ref, gozen]
     runs-on: ubuntu-24.04
     outputs:
