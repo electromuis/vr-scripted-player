@@ -206,7 +206,8 @@ jobs:
             # Windows and macOS only take digits and dots (1.2.0-beta -> 1.2.0).
             sed -i "s|^config/version=.*|config/version=\"${VERSION%%[-+]*}\"|" project_engine/project.godot
           else
-            VERSION="$(grep -Po '^config/version="\K[^"]+' project_engine/project.godot)-dev.${GITHUB_SHA::7}"
+            BASE="$(grep -Po '^config/version="\K[^"]+' project_engine/project.godot)"
+            VERSION="${BASE%-dev}-dev.${GITHUB_SHA::7}"  # 0.1.0-dev -> 0.1.0-dev.abc1234
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
