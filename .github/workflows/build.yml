@@ -309,12 +309,49 @@ jobs:
       - name: Package
         run: ci/package.sh "${{ steps.version.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
+      # One artifact per package, uploaded as the file itself (not zipped).
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v7
         with:
-          name: ShaderPlayerVR-${{ steps.version.outputs.version }}
-          path: dist/*
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-windows-x86_64-setup.exe
+          archive: false
           if-no-files-found: error
-          compression-level: 0
+      - name: Upload Windows portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-windows-x86_64-portable.zip
+          archive: false
+          if-no-files-found: error
+      - name: Upload Linux .deb
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-linux-x86_64.deb
+          archive: false
+          if-no-files-found: error
+      - name: Upload Linux portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-linux-x86_64-portable.tar.gz
+          archive: false
+          if-no-files-found: error
+      - name: Upload macOS
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-macos-universal.zip
+          archive: false
+          if-no-files-found: error
+      - name: Upload Quest 3
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-quest3.apk
+          archive: false
+          if-no-files-found: error
+      - name: Upload All platforms portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-portable-all-platforms.zip
+          archive: false
+          if-no-files-found: error
 
   release:
     name: GitHub release
@@ -340,10 +377,13 @@ jobs:
           } > release_notes.md
           cat release_notes.md
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: ShaderPlayerVR-${{ needs.package.outputs.version }}
+          pattern: ShaderPlayerVR-${{ needs.package.outputs.version }}-*
           path: dist
+          merge-multiple: true
+
+      - run: ls -la dist
 
       - uses: softprops/action-gh-release@v2
         with:
