@@ -11,7 +11,8 @@
 # platform: linux | windows | macos | android, arch: x86_64 | arm64.
 # Every ci/gde_gozen/patches/*.patch is applied on top, in name order.
 # SCONS_CACHE_DIR, if set, is used as SCons' build cache (godot-cpp and the
-# extension's objects), so unchanged files aren't recompiled.
+# extension's objects), so unchanged files aren't recompiled. godot-cpp's
+# SConstruct turns it on from $SCONS_CACHE; scons has no option for it.
 set -euo pipefail
 
 STEP="$1"
@@ -64,15 +65,15 @@ ffmpeg() {
 }
 
 extension() {
-  local jobs cache=()
+  local jobs
   jobs="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
   if [ -n "${SCONS_CACHE_DIR:-}" ]; then
     mkdir -p "$SCONS_CACHE_DIR"
-    cache=("--cache-dir=$SCONS_CACHE_DIR")
+    export SCONS_CACHE="$SCONS_CACHE_DIR"
   fi
   cd "$SRC"
-  scons -j"$jobs" "${cache[@]}" target=template_debug platform="$PLATFORM" arch="$ARCH"
-  scons -j"$jobs" "${cache[@]}" target=template_release platform="$PLATFORM" arch="$ARCH"
+  scons -j"$jobs" target=template_debug platform="$PLATFORM" arch="$ARCH"
+  scons -j"$jobs" target=template_release platform="$PLATFORM" arch="$ARCH"
 
   local out="$ROOT/gozen-bin/$PLATFORM-$ARCH"
   mkdir -p "$out"
