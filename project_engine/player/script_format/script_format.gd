@@ -101,6 +101,18 @@ static func _validate_media(media, errors: Array) -> void:
 			errors.append("media.duration must be a number")
 		elif float(media["duration"]) <= 0.0:
 			errors.append("media.duration must be > 0")
+	# Optional beat grid for shaders, instead of detecting one (see BeatGrid):
+	# {"bpm": 128, "offset": 0.42 (a downbeat, s), "beats_per_bar": 4}.
+	if media.has("beats"):
+		var beats = media["beats"]
+		if typeof(beats) != TYPE_DICTIONARY:
+			errors.append("media.beats must be an object")
+		elif BeatGrid.from_dict(beats) == null:
+			errors.append("media.beats.bpm must be a number > 0")
+		else:
+			for k in ["offset", "beats_per_bar"]:
+				if beats.has(k) and typeof(beats[k]) not in [TYPE_INT, TYPE_FLOAT]:
+					errors.append("media.beats.%s must be a number" % k)
 
 
 static func _validate_string_map(m, name: String, errors: Array) -> void:

@@ -41,6 +41,8 @@ var settings: PlayerSettings
 var router: InputRouter
 var video: VideoBridge
 var audio: AudioAnalyzer
+## The current video's beat grid and the music's place in it, for shaders.
+var beats: BeatClock
 var camera_fx: CameraFx
 var preset_store: PresetStore
 var screen_settings: ScreenSettings
@@ -113,11 +115,14 @@ func setup(player_settings: PlayerSettings, bindings: InputBindings) -> void:
 	_apply_settings()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_layer_anchor()
 	_update_camera_fx()
 	# `pulse` reactive objects follow the bass.
 	runner.audio_bass = audio.bass if audio != null else 0.0
+	if beats != null:
+		var heard := video.audio_seconds() if video != null else -1.0
+		beats.advance(delta, heard, runner.playhead, runner.playing and not runner.hold)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -310,6 +315,7 @@ func _rebuild_layers() -> void:
 		_layer_anchor.add_child(node)
 		if audio != null:
 			node.bind_audio(audio)
+		node.bind_beats(beats)
 		_apply_video_to_layer(node)
 		if _main_screen != null:
 			node.set_follow_target(_main_screen)
@@ -500,6 +506,9 @@ func _apply_video_to_layer(node: Visualizer) -> void:
 
 
 func _init_video() -> void:
+	beats = BeatClock.new()
+	beats.name = "BeatClock"
+	add_child(beats)
 	if not ClassDB.class_exists("GoZenVideo"):
 		status.emit("GoZenVideo class not found — is addons/gde_gozen loaded?")
 		return
@@ -544,6 +553,7 @@ func _on_object_spawned(id: String, node: Node3D) -> void:
 	if node is Visualizer:
 		if audio != null:
 			node.bind_audio(audio)
+		node.bind_beats(beats)
 		_apply_video_to_layer(node)
 	# A layer's shader and a `pulse` arrive right after this signal.
 	_update_audio_active.call_deferred()
@@ -615,6 +625,8 @@ func _load_video_for(data: TimelineData) -> void:
 		status.emit("Video not found: %s" % resource_path)
 	video_path = os_path
 	_video_name = String(data.meta.get("video_name", os_path))
+	if beats != null:
+		beats.load_for(os_path, BeatGrid.from_dict(data.media.get("beats")))
 	media_path_changed.emit(os_path)
 	if video == null or os_path == "":
 		return

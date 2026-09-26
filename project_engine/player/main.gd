@@ -431,6 +431,8 @@ func _bind_panel_content() -> void:
 		_camera_tab = content.camera_tab
 		_camera_tab.projection_selected.connect(stage.set_projection_override)
 		_camera_tab.reset_view_requested.connect(stage.reset_view)
+		if stage.beats != null:
+			_camera_tab.bind_beats(stage.beats)
 		stage.apply_projection()
 	# Config first: the Files tab needs PlayerSettings (its remembered folder)
 	# before bind_files opens its first folder.

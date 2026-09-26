@@ -419,6 +419,18 @@ func audio_gain() -> float:
 	return db_to_linear(_vp.audio_player.volume_db) if _vp != null and _vp.audio_player != null else 1.0
 
 
+## Media seconds of the sound being heard now (the audio player's position,
+## plus time since its last mix, minus output latency), or -1 when it
+## isn't playing sound (paused, seeking, no audio track).
+func audio_seconds() -> float:
+	if _vp == null or not _loaded or _seek_task != -1 or not _vp.is_playing:
+		return -1.0
+	var ap: AudioStreamPlayer = _vp.audio_player
+	if ap == null or ap.stream == null or not ap.playing or ap.stream_paused:
+		return -1.0
+	return ap.get_playback_position() + AudioServer.get_time_since_last_mix() - AudioServer.get_output_latency()
+
+
 ## Native video resolution (the output texture's size), or ZERO before load.
 func frame_size() -> Vector2i:
 	return _viewport.size if (_viewport != null and _loaded) else Vector2i.ZERO
