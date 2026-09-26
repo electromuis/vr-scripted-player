@@ -18,6 +18,10 @@ extends VBoxContainer
 ##
 ## The view row (projection + reset view) isn't part of presets: projection
 ## is per video, reset view is an action. Both are signalled up to main.gd.
+##
+## The beat row (built in code, under the view rows) shows the video's
+## BeatClock: its tempo, the beat of the bar lighting up as it plays, and
+## fixes for a wrong detection (move the "1", half / double time, scan again).
 
 signal projection_selected(key: String)  ## a VideoProjection.KEYS entry, incl. "auto"
 signal reset_view_requested
@@ -64,6 +68,10 @@ var _shader_keys: Array[String] = []  # parallel to shader_option items
 var _effect_options: Array[Dictionary] = []  # [{key, label}] for effect pickers
 var _watched: Array[Callable] = []  # per watched layer, its bound structure_changed handler
 var _refreshing: bool = false
+var _beats: BeatClock
+var _beat_status: Label
+var _beat_dots: Label
+var _beat_buttons: Array[Button] = []
 
 
 func _ready() -> void:
@@ -92,6 +100,8 @@ func _ready() -> void:
 	shader_option.item_selected.connect(_on_shader_selected)
 	_refresh_target_list()
 	_update_value_labels()
+	_build_beat_row()
+	set_process(false)
 
 
 ## Reflect the current projection. `selected` is "auto" or a key; when auto,
@@ -102,6 +112,77 @@ func set_projection_state(selected: String, detected: String) -> void:
 		return
 	projection_option.set_item_text(0, "Auto (%s)" % VideoProjection.LABELS.get(detected, detected))
 	projection_option.select(idx)
+
+
+## Show and correct this clock's grid in the beat row.
+func bind_beats(beats: BeatClock) -> void:
+	_beats = beats
+	_beats.grid_changed.connect(_update_beat_row)
+	_update_beat_row()
+
+
+func _build_beat_row() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var label := Label.new()
+	label.custom_minimum_size.x = LABEL_WIDTH
+	label.text = "Beat"
+	row.add_child(label)
+	_beat_status = Label.new()
+	_beat_status.custom_minimum_size.x = 150
+	row.add_child(_beat_status)
+	_beat_dots = Label.new()
+	_beat_dots.custom_minimum_size.x = 70
+	_beat_dots.tooltip_text = "The beat of the bar; the first lights up on the \"1\""
+	row.add_child(_beat_dots)
+	for b in [["◀ 1", "Move the downbeat (\"1\") a beat earlier", func(): _beats.shift_downbeat(-1)],
+			["1 ▶", "Move the downbeat (\"1\") a beat later", func(): _beats.shift_downbeat(1)],
+			["½×", "Half the tempo (detected double time)", func(): _beats.scale_tempo(0.5)],
+			["2×", "Double the tempo (detected half time)", func(): _beats.scale_tempo(2.0)],
+			["Rescan", "Detect the beat again, dropping these fixes", func(): _beats.rescan()]]:
+		var button := Button.new()
+		button.text = b[0]
+		button.tooltip_text = b[1]
+		button.pressed.connect(func():
+			if _beats != null:
+				b[2].call())
+		row.add_child(button)
+		_beat_buttons.append(button)
+	add_child(row)
+	move_child(row, layer_options_row.get_index() + 1)
+	_update_beat_row()
+
+
+func _update_beat_row() -> void:
+	if _beat_status == null:
+		return
+	var g: BeatGrid = _beats.grid if _beats != null else null
+	var valid := g != null and g.is_valid()
+	if _beats != null and _beats.is_analyzing():
+		_beat_status.text = "Analysing… %d%%" % roundi(_beats.analysis_progress() * 100.0)
+	elif valid:
+		_beat_status.text = "%s BPM" % ("%.2f" % g.bpm).rstrip("0").rstrip(".")
+	elif g != null:
+		_beat_status.text = "No steady beat"
+	else:
+		_beat_status.text = "—"
+	for button in _beat_buttons:
+		button.disabled = _beats == null or (not valid and button.text != "Rescan")
+	_beat_dots.text = ""
+	set_process(_beats != null and (valid or _beats.is_analyzing()))
+
+
+func _process(_delta: float) -> void:
+	if not is_visible_in_tree():
+		return
+	if _beats.is_analyzing():
+		_update_beat_row()
+		return
+	var u := _beats.uniforms()
+	var dots := ""
+	for i in int(u.beats_per_bar):
+		dots += "●" if i == int(u.beat_in_bar) else "○"
+	_beat_dots.text = dots
 
 
 func bind(settings: ScreenSettings, presets: PresetStore, layers: LayerStack = null) -> void:

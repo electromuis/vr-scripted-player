@@ -56,6 +56,9 @@ const BUILTINS := [
 	{"key": "res://player/visualizer/shaders/light_ring.gdshader", "label": "Light ring"},
 	{"key": "res://player/visualizer/shaders/spectrum_bars.gdshader", "label": "Spectrum bars"},
 	{"key": "res://player/visualizer/shaders/video_blur.gdshader", "label": "Video blur"},
+	{"key": "res://player/visualizer/shaders/beat_tunnel.gdshader", "label": "Beat tunnel"},
+	{"key": "res://player/visualizer/shaders/laser_fan.gdshader", "label": "Laser fan"},
+	{"key": "res://player/visualizer/shaders/kaleido_pulse.gdshader", "label": "Kaleido pulse"},
 ]
 const BUILTIN_EFFECTS := [
 	{"key": KEY_BLACK, "label": "Key black"},

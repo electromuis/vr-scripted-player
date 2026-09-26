@@ -22,6 +22,9 @@ const COPIES := {
 	"player/visualizer/shaders/light_ring.gdshader": "visualizer/shaders/light_ring.gdshader",
 	"player/visualizer/shaders/spectrum_bars.gdshader": "visualizer/shaders/spectrum_bars.gdshader",
 	"player/visualizer/shaders/video_blur.gdshader": "visualizer/shaders/video_blur.gdshader",
+	"player/visualizer/shaders/beat_tunnel.gdshader": "visualizer/shaders/beat_tunnel.gdshader",
+	"player/visualizer/shaders/laser_fan.gdshader": "visualizer/shaders/laser_fan.gdshader",
+	"player/visualizer/shaders/kaleido_pulse.gdshader": "visualizer/shaders/kaleido_pulse.gdshader",
 	"player/runtime/modifiers.gd": "modifiers/modifiers.gd",
 }
 

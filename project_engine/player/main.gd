@@ -45,6 +45,8 @@ var _main_screen: Node3D  # what locked layers follow
 ## and their settings place them relative to it.
 var _layer_anchor: Node3D
 var _audio: AudioAnalyzer
+## The current video's beat grid and the music's place in it, for shaders.
+var _beats: BeatClock
 var _player_settings: PlayerSettings
 var _skyboxes := SkyboxLibrary.new()
 var _camera_tab: Node  # set once the floating panel content binds
@@ -143,10 +145,13 @@ func _ready() -> void:
 		xr_mode.try_enter_vr()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_layer_anchor()
 	# `pulse` reactive objects follow the bass.
 	runner.audio_bass = _audio.bass if _audio != null else 0.0
+	if _beats != null:
+		var heard := _video.audio_seconds() if _video != null else -1.0
+		_beats.advance(delta, heard, runner.playhead, runner.playing and not runner.hold)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -516,6 +521,7 @@ func _rebuild_layers() -> void:
 		_layer_anchor.add_child(node)
 		if _audio != null:
 			node.bind_audio(_audio)
+		node.bind_beats(_beats)
 		_apply_video_to_layer(node)
 		if _main_screen != null:
 			node.set_follow_target(_main_screen)
@@ -771,6 +777,8 @@ func _bind_panel_content() -> void:
 		_camera_tab = content.camera_tab
 		_camera_tab.projection_selected.connect(_on_projection_selected)
 		_camera_tab.reset_view_requested.connect(reset_view)
+		if _beats != null:
+			_camera_tab.bind_beats(_beats)
 		_apply_projection()
 	# Config first: the Files tab needs PlayerSettings (its remembered folder)
 	# before bind_files opens its first folder.
@@ -825,6 +833,9 @@ func _bind_wrist_hud() -> void:
 
 
 func _init_video() -> void:
+	_beats = BeatClock.new()
+	_beats.name = "BeatClock"
+	add_child(_beats)
 	if not ClassDB.class_exists("GoZenVideo"):
 		_set_status("GoZenVideo class not found — is addons/gde_gozen loaded?")
 		return
@@ -870,6 +881,7 @@ func _on_object_spawned(id: String, node: Node3D) -> void:
 	if node is Visualizer:
 		if _audio != null:
 			node.bind_audio(_audio)
+		node.bind_beats(_beats)
 		_apply_video_to_layer(node)
 	# A layer's shader and a `pulse` arrive right after this signal.
 	_update_audio_active.call_deferred()
@@ -940,6 +952,8 @@ func _load_video_for(data: TimelineData) -> void:
 		_set_status("Video not found: %s" % resource_path)
 	_video_path = os_path
 	_video_name = String(data.meta.get("video_name", os_path))
+	if _beats != null:
+		_beats.load_for(os_path, BeatGrid.from_dict(data.media.get("beats")))
 	if _whirligig != null:
 		_whirligig.set_media_path(os_path)
 	if _video == null or os_path == "":

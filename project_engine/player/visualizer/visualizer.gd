@@ -30,7 +30,7 @@ extends Node3D
 ## per eye as a flat stereo screen, so locked at size 1 it lines up with
 ## the video.
 ## The AudioAnalyzer is shared, so main.gd runs it while any layer
-## is_running().
+## is_running(). So is the BeatClock, whose grid sets the beat uniforms.
 ##
 ## A script's layers are the same node, spawned from prefabs/layer.tscn
 ## (`at_origin`): the quad then sits at this node's own transform, like a
@@ -50,6 +50,7 @@ var _shader_key: String = ""
 var _hints: Dictionary = {}  # VisualizerShaders.parse_hints() of the shader
 var _param_specs: Array = []  # the shader's hinted uniforms (VisualizerShaders.parse_hints)
 var _audio: AudioAnalyzer
+var _beats: BeatClock
 var _video: Texture2D
 var _video_stereo: int = VideoProjection.Stereo.MONO
 var _video_aspect: float = 0.0  # full frame width / height; 0 = not known yet
@@ -77,6 +78,10 @@ func _ready() -> void:
 func bind_audio(audio: AudioAnalyzer) -> void:
 	_audio = audio
 	_bind_channels()
+
+
+func bind_beats(beats: BeatClock) -> void:
+	_beats = beats
 
 
 func bind_video(tex: Texture2D) -> void:
@@ -221,6 +226,10 @@ func _process(_delta: float) -> void:
 		return
 	if _locked:
 		_track_follow_target()
+	if _beats != null:
+		var u := _beats.uniforms()
+		for k in u:
+			_material.set_shader_parameter(k, u[k])
 	if _audio == null:
 		return
 	_material.set_shader_parameter("audio_level", _audio.level)

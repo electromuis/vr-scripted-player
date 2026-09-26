@@ -36,6 +36,19 @@ uniform float audio_bass = 0.0;
 uniform float audio_mid = 0.0;
 uniform float audio_high = 0.0;
 
+// The music's beat grid (see BeatClock), detected from the whole track, so
+// it's exact from the first frame and through seeks. beat_bpm is 0 when
+// there's none (no steady beat, a stream, still analysing), and the rest
+// are 0 then too: fall back to audio_bass.
+uniform float beat_bpm = 0.0;
+uniform float beat_time = 0.0;       // beats since a downbeat, continuous: 2.5 = halfway into the third
+uniform float beat_phase = 0.0;      // fract(beat_time): 0 on each beat, rising to 1 before the next
+uniform float bar_time = 0.0;        // bars, continuous (beat_time / beats_per_bar)
+uniform float bar_phase = 0.0;       // fract(bar_time): 0 on each downbeat
+uniform int beat_in_bar = 0;         // which beat of the bar: 0 = the downbeat ("1")
+uniform int beats_per_bar = 4;
+uniform float beat_confidence = 0.0; // 0..1, how steady the track's beat is
+
 #define iTime TIME
 #define iGlobalTime TIME
 #define iTimeDelta (1.0 / 60.0)

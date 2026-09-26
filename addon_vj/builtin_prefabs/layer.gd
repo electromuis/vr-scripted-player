@@ -10,20 +10,24 @@ extends "res://addons/vj_editor/builtin_prefabs/screen.gd"
 ##
 ## `shader_material` holds the layer shader, a canvas_item .gdshader such as
 ## addons/vj_editor/visualizer/shaders/ (the player's built-ins: Light ring,
-## Spectrum bars, Video blur) or your own written the same way. Its hinted
+## Spectrum bars, Video blur, and the beat-synced Beat tunnel, Laser fan and
+## Kaleido pulse) or your own written the same way. Its hinted
 ## uniforms export as `config.params`; animate
 ## `<layer>:shader_material:shader_parameter/<p>` for a `<id>.layer` track.
 ## `render_scale` exports as `config.resolution`, a multiplier on the
 ## shader's `// @resolution` hint (960×540 without one), like the Camera
 ## tab's layer resolution.
 ##
-## The editor has no audio, so sound-reactive shaders sit at silence here;
+## The editor has no audio, so sound-reactive shaders sit at silence here
+## (and beat-synced ones have no beat grid, so they use their fallback);
 ## a channel tagged `// @iChannelN video` gets the preview still. The
 ## player is the accurate view.
 
 const DEFAULT_RESOLUTION := Vector2i(960, 540)
 const _INPUTS := ["iChannel0", "iChannel1", "iChannel2", "iChannel3", "iChannelResolution",
-		"iResolution", "video_stereo", "audio_level", "audio_bass", "audio_mid", "audio_high"]
+		"iResolution", "video_stereo", "audio_level", "audio_bass", "audio_mid", "audio_high",
+		"beat_bpm", "beat_time", "beat_phase", "bar_time", "bar_phase", "beat_in_bar", "beats_per_bar",
+		"beat_confidence"]
 
 var _hints := {"resolution": Vector2i.ZERO, "channels": {}}
 
