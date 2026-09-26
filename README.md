@@ -99,6 +99,25 @@ Studio opens a script and lets you change it from inside the headset, on the pla
 
 ![Studio moving things: nothing selected, carrying the cube, the snap grid, auto-key on the screen, the desktop status, the wrist palette](docs/studio/m2_studio.png)
 
+## Builds and releases (CI)
+
+`.github/workflows/build.yml` runs on every push and pull request:
+
+1. **gde_gozen:** builds FFmpeg + gde_gozen (debug and release) for Linux x86_64, Windows x86_64, macOS arm64 + x86_64 and Android arm64 (Quest 3). The source is `GOZEN_GIT_URL` @ `GOZEN_REF` (default: [Codeberg upstream](https://codeberg.org/gozen/gde_gozen)), plus any patches in `ci/gde_gozen/patches/` (see the README there for our audio loading fix). Builds are cached in three layers: the finished library per gde_gozen commit + patches (nothing rebuilds), FFmpeg and its libraries per dependency commit + `build.py` (a new gde_gozen commit, e.g. a push to the fork, skips the 15–30 min FFmpeg build), and SCons' object cache (only changed C++ files recompile). The binaries are never uploaded as artifacts: the other jobs restore them from that cache.
+2. **Tests:** imports the project with Godot 4.7.2, checks gde_gozen loads (`tests/check_extensions.gd`), runs `tests/run.gd`.
+3. **Export and package:** exports with `project_engine/export_presets.cfg` and uploads one artifact holding:
+   - Windows: `-setup.exe` installer and a portable `.zip`
+   - Linux: `.deb` and a portable `.tar.gz`
+   - macOS: universal `.app` in a `.zip` (ad-hoc signed, not notarized: right-click → Open the first time)
+   - Quest 3: `.apk` (sideload with `adb install` or SideQuest; Meta OpenXR vendors plugin)
+   - `-portable-all-platforms.zip` with all of the above unpacked
+   Windows and Linux builds carry no loose gde_gozen library: it is packed into the `.pck` inside the executable, and `player/runtime/gozen_loader.gd` (the first autoload) writes it to `user://gozen/` and loads it on startup. On macOS and Quest it is inside the `.app` / `.apk`, as usual.
+4. **Release:** pushing a tag `v*` (`git tag v0.2.0 && git push origin v0.2.0`) creates a GitHub release with those files, and the commit messages since the previous tag as its notes. Tags with a `-` (`v0.2.0-beta`) are marked pre-release.
+
+The Quest APK is signed with the `ANDROID_KEYSTORE_BASE64` (base64 of the `.keystore`), `ANDROID_KEYSTORE_USER` (key alias) and `ANDROID_KEYSTORE_PASSWORD` repository secrets. Without them CI signs it with a throwaway key, and each build then has to be uninstalled before the next one installs.
+
+The helper scripts in `ci/` work locally too: `ci/setup_godot.sh --templates`, `ci/fetch_addons.sh [--android]`, `ci/build_gozen.sh <platform> <arch>`, `ci/package.sh <version>`.
+
 ## Prerequisites
 
 - Godot 4.4 stable (Windows binary at `C:\ProgramData\chocolatey\lib\godot\tools\Godot_v4.4-stable_win64.exe` in this dev environment)

@@ -147,27 +147,42 @@ static func test_forest_tunnel_prefabs_load(tc: TestCase) -> void:
 
 
 static func test_forest_tunnel_scene_states(tc: TestCase) -> void:
-	# Environment swap at 45 s, screen split at 55 s, merge at 160 s, the
-	# tunnel gone at 156.9 s and the forest back at 160.2 s.
+	# The story's shape, not its timings (they move whenever the scene is
+	# re-edited and re-exported): forest on one screen, a split into three
+	# screens in the tunnel, and back to one screen in the forest.
 	var r := ScriptFormat.load_from_file(_example("forest_tunnel/video.json"))
 	tc.assert_ok(r)
 	if not r.ok:
 		return
 	var events: Array = r.data.events_sorted()
-	var ids_at := func(t: float) -> Array:
-		var ids := ScriptRunner._project_state_at(events, t).keys()
-		ids.sort()
-		return ids
-	# Everything screen-related sits in the `screen_master` group, which stays
-	# throughout. `backdrop` lives inside main_screen and goes with it; the
-	# columns and `rings` live inside the `screens` group, which stays (empty).
-	tc.assert_eq(ids_at.call(10.0), ["backdrop", "forest", "main_screen", "screen_master", "screens"])
-	tc.assert_eq(ids_at.call(50.0), ["backdrop", "main_screen", "screen_master", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(57.0), ["screen_center", "screen_left", "screen_master", "screen_right", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(60.0), ["rings", "screen_center", "screen_left", "screen_master", "screen_right", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(155.0), ["screen_center", "screen_left", "screen_master", "screen_right", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(165.0), ["backdrop", "forest", "main_screen", "screen_master", "screens"])
-	tc.assert_eq(ids_at.call(180.0), ["backdrop", "forest", "main_screen", "screen_master", "screens"])
+	# The state after every event time, plus the start.
+	var times: Array = [0.0]
+	for ev in events:
+		if not times.has(float(ev.get("t", 0.0))):
+			times.append(float(ev.get("t", 0.0)))
+	var split_seen := false
+	var states: Array = []
+	for t in times:
+		var ids: Dictionary = ScriptRunner._project_state_at(events, t)
+		states.append(ids)
+		var at := " at %.1f s" % t
+		# Groups that hold the screens stay the whole time.
+		tc.assert_true(ids.has("screens") and ids.has("screen_master"), "screen groups exist" + at)
+		# `backdrop` lives inside main_screen and goes with it.
+		tc.assert_eq(ids.has("backdrop"), ids.has("main_screen"), "backdrop follows main_screen" + at)
+		# One screen or the three columns, never both, and the columns together.
+		var columns: int = int(ids.has("screen_left")) + int(ids.has("screen_center")) + int(ids.has("screen_right"))
+		tc.assert_true(columns == 0 or columns == 3, "all three columns or none" + at)
+		tc.assert_true(ids.has("main_screen") != (columns == 3), "main_screen xor the columns" + at)
+		# `rings` live inside the split screens' group and only show while split.
+		if ids.has("rings"):
+			tc.assert_eq(columns, 3, "rings only while split" + at)
+		if columns == 3:
+			split_seen = true
+			tc.assert_true(ids.has("tunnel") or not ids.has("forest"), "split happens away from the forest" + at)
+	tc.assert_true(split_seen, "the screen splits into three at some point")
+	tc.assert_true(states.front().has("forest") and states.front().has("main_screen"), "starts in the forest on one screen")
+	tc.assert_true(states.back().has("forest") and states.back().has("main_screen"), "ends in the forest on one screen")
 
 
 static func test_timeline_helpers(tc: TestCase) -> void:
