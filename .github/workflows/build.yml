@@ -113,13 +113,49 @@ jobs:
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" "platforms;android-34" > /dev/null
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
+      # A new gde_gozen commit (e.g. a push to the fork) misses the cache above,
+      # but its FFmpeg is usually unchanged: that's cached on its own, keyed on
+      # the dependency commits, and SCons caches godot-cpp's and the
+      # extension's objects, so only what changed gets recompiled.
+      - name: Check out gde_gozen
+        id: src
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git config --global --add safe.directory '*'
+          ci/build_gozen.sh checkout
+          echo "deps-key=$(ci/build_gozen.sh deps-key ${{ matrix.platform }} ${{ matrix.arch }})" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached FFmpeg
+        id: ffmpeg-cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: gde_gozen/ffmpeg/bin
+          key: ffmpeg-${{ matrix.platform }}-${{ matrix.arch }}-${{ steps.src.outputs.deps-key }}
+
+      - name: Build FFmpeg
+        if: steps.cache.outputs.cache-hit != 'true' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        env:
+          JAVA_HOME: ${{ matrix.platform == 'android' && '/usr/lib/jvm/java-17-openjdk' || '' }}
+        run: ci/build_gozen.sh ffmpeg ${{ matrix.platform }} ${{ matrix.arch }}
+
+      - name: Restore SCons cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: scons-cache
+          key: scons-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: scons-${{ matrix.platform }}-${{ matrix.arch }}-
+
       - name: Build gde_gozen
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           JAVA_HOME: ${{ matrix.platform == 'android' && '/usr/lib/jvm/java-17-openjdk' || '' }}
         run: |
-          git config --global --add safe.directory '*'
-          ci/build_gozen.sh ${{ matrix.platform }} ${{ matrix.arch }}
+          # $PWD, not github.workspace: that's the host path in container jobs.
+          SCONS_CACHE_DIR="$PWD/scons-cache" ci/build_gozen.sh extension ${{ matrix.platform }} ${{ matrix.arch }}
+          # Old objects pile up in the SCons cache; start over once it's big.
+          if [ "$(du -sm scons-cache | cut -f1)" -gt 1500 ]; then rm -rf scons-cache; fi
 
   test:
     name: Tests
