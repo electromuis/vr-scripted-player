@@ -53,6 +53,7 @@ static func load_from_string(text: String, source_path: String = "<memory>") -> 
 	data.shaders = parsed.get("shaders", {})
 	data.objects = parsed.get("objects", [])
 	data.tracks = parsed.get("tracks", [])
+	data.camera = parsed.get("camera", {})
 	data.script_path = source_path
 	data.base_dir = source_path.get_base_dir() if source_path != "<memory>" else ""
 
@@ -74,6 +75,8 @@ static func _validate(root: Dictionary, errors: Array) -> void:
 	_validate_string_map(root.get("shaders", {}), "shaders", errors)
 	_validate_objects(root.get("objects", []), errors)
 	_validate_tracks(root.get("tracks", []), errors)
+	if root.has("camera"):
+		_validate_camera(root["camera"], errors)
 
 
 static func _validate_media(media, errors: Array) -> void:
@@ -282,6 +285,30 @@ static func _validate_config(cfg, loc: String, errors: Array) -> void:
 			errors.append("%s.effects[%d].params must be an object" % [loc, i])
 		elif e.has("enabled") and typeof(e["enabled"]) != TYPE_BOOL:
 			errors.append("%s.effects[%d].enabled must be true or false" % [loc, i])
+
+
+## `camera`: {"effects": [...]}, each effect like a screen's (shader,
+## params, enabled) plus an optional strength (0..1).
+static func _validate_camera(cam, errors: Array) -> void:
+	if typeof(cam) != TYPE_DICTIONARY:
+		errors.append("'camera' must be an object")
+		return
+	var effects = cam.get("effects", [])
+	if typeof(effects) != TYPE_ARRAY:
+		errors.append("camera.effects must be an array")
+		return
+	for i in effects.size():
+		var e = effects[i]
+		var loc := "camera.effects[%d]" % i
+		if typeof(e) != TYPE_DICTIONARY or typeof(e.get("shader")) != TYPE_STRING:
+			errors.append("%s must be an object with a shader (a shaders[] key)" % loc)
+			continue
+		if e.has("params") and typeof(e["params"]) != TYPE_DICTIONARY:
+			errors.append("%s.params must be an object" % loc)
+		if e.has("enabled") and typeof(e["enabled"]) != TYPE_BOOL:
+			errors.append("%s.enabled must be true or false" % loc)
+		if e.has("strength") and typeof(e["strength"]) not in [TYPE_INT, TYPE_FLOAT]:
+			errors.append("%s.strength must be a number" % loc)
 
 
 static func _err(msg: String) -> Dictionary:

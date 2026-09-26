@@ -21,6 +21,9 @@ var _end_action: OptionButton
 var _live_sync: CheckButton
 var _fullscreen: CheckButton
 var _play_bar: CheckButton
+var _camera_fx: CheckButton
+var _camera_fx_max: HSlider
+var _camera_fx_max_value: Label
 
 
 func _ready() -> void:
@@ -71,6 +74,26 @@ func _ready() -> void:
 	_play_bar.toggled.connect(func(on: bool):
 		_apply_ui(func(): _settings.show_play_bar = on))
 	_row("Play bar", _play_bar)
+
+	_camera_fx = CheckButton.new()
+	_camera_fx.text = "Allow full-view effects"
+	_camera_fx.tooltip_text = "Camera effects (kaleidoscopes, colour cycling, warps) from presets and scripts"
+	_camera_fx.toggled.connect(func(on: bool):
+		_apply_ui(func(): _settings.camera_fx = on))
+	_row("Camera effects", _camera_fx)
+	_camera_fx_max = HSlider.new()
+	_camera_fx_max.min_value = 0.0
+	_camera_fx_max.max_value = 1.0
+	_camera_fx_max.step = 0.05
+	_camera_fx_max.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_camera_fx_max.tooltip_text = "Scripts and presets never go stronger than this"
+	_camera_fx_max_value = Label.new()
+	_camera_fx_max_value.custom_minimum_size = Vector2(60, 0)
+	_camera_fx_max_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_camera_fx_max.value_changed.connect(func(v: float):
+		_camera_fx_max_value.text = "%d%%" % roundi(v * 100.0)
+		_apply_ui(func(): _settings.camera_fx_max = v))
+	_row("Effects at most", _camera_fx_max, _camera_fx_max_value)
 
 	_volume = HSlider.new()
 	_volume.min_value = 0.0
@@ -144,6 +167,9 @@ func _refresh() -> void:
 	_live_sync.button_pressed = _settings.live_sync
 	_fullscreen.button_pressed = _settings.fullscreen
 	_play_bar.button_pressed = _settings.show_play_bar
+	_camera_fx.button_pressed = _settings.camera_fx
+	_camera_fx_max.value = _settings.camera_fx_max
+	_camera_fx_max_value.text = "%d%%" % roundi(_settings.camera_fx_max * 100.0)
 	_refreshing = false
 
 

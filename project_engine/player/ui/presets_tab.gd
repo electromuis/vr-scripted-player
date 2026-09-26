@@ -133,7 +133,7 @@ func _on_save() -> void:
 	if not _active_editable() or _settings == null:
 		return
 	var name := String(_presets.load_preset(_presets.active_index).get("name", ""))
-	_presets.save_preset(_presets.active_index, name, _settings.to_dict(), _layers_data())
+	_presets.save_preset(_presets.active_index, name, _settings.to_dict(), _layers_data(), _camera_fx_data())
 	_status.text = "Saved current values to \"%s\"." % name
 
 
@@ -141,7 +141,7 @@ func _on_new() -> void:
 	if _presets == null or _settings == null:
 		return
 	var idx := _presets.next_free_index()
-	_presets.save_preset(idx, "Preset %d" % idx, _settings.to_dict(), _layers_data())
+	_presets.save_preset(idx, "Preset %d" % idx, _settings.to_dict(), _layers_data(), _camera_fx_data())
 	_presets.set_active(idx)
 	_status.text = "Created preset %d — rename it above." % idx
 
@@ -208,3 +208,7 @@ func _update_buttons() -> void:
 
 func _layers_data() -> Array:
 	return _layers.to_array() if _layers != null else []
+
+
+func _camera_fx_data() -> Dictionary:
+	return _layers.camera_fx.to_dict() if _layers != null else {}

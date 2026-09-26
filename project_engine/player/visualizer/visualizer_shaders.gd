@@ -100,6 +100,8 @@ static func list_options(dirs: Array[String] = search_dirs(), effects: bool = fa
 				is_effect = is_effect_code(FileAccess.get_file_as_string(path))
 			elif not ext in SHADERTOY_EXTENSIONS:
 				continue
+			elif CameraFxShaders.is_camera_code(FileAccess.get_file_as_string(path)):
+				continue  # a camera effect (CameraFxShaders), not a layer
 			if is_effect == effects:
 				out.append({"key": path, "label": String(f).get_basename()})
 	return out

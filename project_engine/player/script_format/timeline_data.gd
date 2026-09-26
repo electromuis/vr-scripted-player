@@ -8,6 +8,8 @@ var prefabs: Dictionary = {}
 var shaders: Dictionary = {}
 var objects: Array = []
 var tracks: Array = []
+## The script's camera block: {"effects": [{shader, params, strength, enabled}]}.
+var camera: Dictionary = {}
 
 var script_path: String = ""
 var base_dir: String = ""
@@ -45,7 +47,7 @@ func events_sorted() -> Array:
 
 
 func resolve(rel_path: String) -> String:
-	if rel_path.begins_with("res://") or rel_path.begins_with("user://"):
+	if rel_path.begins_with("res://") or rel_path.begins_with("user://") or rel_path.begins_with(CameraFxShaders.BUILTIN_PREFIX):
 		return rel_path
 	if rel_path.is_absolute_path():
 		return rel_path

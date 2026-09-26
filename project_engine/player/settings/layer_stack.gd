@@ -4,13 +4,15 @@ extends RefCounted
 ## The shader layers, in draw order (first = furthest back on its side of
 ## the video). Starts empty; the Camera tab's layer count adds and removes
 ## at the end. Each layer's own edits fire its LayerSettings signals;
-## `layers_changed` is for the list itself.
+## `layers_changed` is for the list itself. Also carries the preset's
+## camera effect (`camera_fx`), which travels with the layers in presets.
 
 signal layers_changed
 
 const MAX_LAYERS := 8
 
 var layers: Array[LayerSettings] = []
+var camera_fx := CameraFxSettings.new()
 
 
 func count() -> int:

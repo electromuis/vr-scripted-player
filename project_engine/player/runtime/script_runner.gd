@@ -56,6 +56,10 @@ var _spawned_from: Dictionary = {}
 var _reactive: Dictionary = {}
 ## A node's own modifier values live in this metadata (runtime only).
 const _MODS_META := "_vj_mods"
+## Target id of the camera effect's tracks (`$camera.effect0`).
+const CAMERA_TARGET := "$camera"
+## slot ("effect0") -> {param: value} from `$camera` tracks at the playhead.
+var _camera_params: Dictionary = {}
 var _mods_lookup := func(n: Node) -> Dictionary: return n.get_meta(_MODS_META, {})
 
 
@@ -193,6 +197,7 @@ func _apply_timeline(data: TimelineData, preserve_playhead: bool) -> void:
 	if inject_default_screen:
 		DefaultScreen.inject(data)
 	timeline = data
+	_camera_params = {}
 	_events_sorted = data.events_sorted()
 	if preserve_playhead:
 		_next_event_idx = _event_idx_after(playhead, _events_sorted)
@@ -541,6 +546,9 @@ func _apply_shader_param_track(track: Dictionary) -> void:
 	var parts := target_path.split(".", false, 1)
 	if parts.size() != 2:
 		return
+	if parts[0] == CAMERA_TARGET:
+		_apply_camera_track(parts[1], track)
+		return
 	var node := _registry.get_node_by_id(parts[0])
 	if node == null:
 		return
@@ -577,6 +585,37 @@ func _apply_shader_param_track(track: Dictionary) -> void:
 			mat = active
 	if mat != null:
 		mat.set_shader_parameter(param, value)
+
+
+## `$camera.effect<N>` tracks: the camera effect's params (and `strength`),
+## read back through camera_effect().
+func _apply_camera_track(slot: String, track: Dictionary) -> void:
+	var value = Interpolation.evaluate(track.get("keyframes", []), playhead)
+	if value == null:
+		return
+	if not _camera_params.has(slot):
+		_camera_params[slot] = {}
+	_camera_params[slot][String(track.get("param", ""))] = value
+
+
+## The script's camera effect for CameraFx: {key, params, strength} with
+## the tracks' current values applied, or {} if the script has none. Only
+## the first enabled effect runs for now.
+func camera_effect() -> Dictionary:
+	if timeline == null:
+		return {}
+	var enabled: Array = timeline.camera.get("effects", []).filter(
+			func(e): return typeof(e) == TYPE_DICTIONARY and e.get("enabled", true) != false)
+	if enabled.is_empty():
+		return {}
+	var e: Dictionary = enabled[0]
+	var params: Dictionary = e.get("params", {}).duplicate() if typeof(e.get("params")) == TYPE_DICTIONARY else {}
+	var live: Dictionary = _camera_params.get("effect0", {})
+	for k in live:
+		params[k] = live[k]
+	var strength := float(live.get("strength", e.get("strength", 1.0)))
+	params.erase("strength")
+	return {"key": _shader_path(String(e.get("shader", ""))), "params": params, "strength": strength}
 
 
 func _read_transform(t: Dictionary) -> Transform3D:

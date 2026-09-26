@@ -34,6 +34,9 @@ var _cli_whirligig_port: int = WhirligigServer.DEFAULT_PORT
 var _cli_whirligig_bind: String = "127.0.0.1"
 var _whirligig: WhirligigServer
 var _router: InputRouter
+var _camera_fx: CameraFx
+var _camera_fx_running := false
+var _camera_fx_error := ""
 var _live_sync: LiveSyncClient
 var _preset_store: PresetStore
 var _screen_settings: ScreenSettings
@@ -103,6 +106,7 @@ func _ready() -> void:
 	_init_media_controls()
 	_init_video()
 	_init_screen_settings()
+	_init_camera_fx()
 	_init_player_settings()
 	_init_fps_label()
 	_init_whirligig()
@@ -138,6 +142,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_update_layer_anchor()
+	_update_camera_fx()
 	# `pulse` reactive objects follow the bass.
 	runner.audio_bass = _audio.bass if _audio != null else 0.0
 
@@ -580,11 +585,43 @@ static func _default_screen_transform() -> Transform3D:
 	return Transform3D(Basis.from_scale(Vector3.ONE * DefaultScreen.SCALE), _screen_pivot())
 
 
-## The analyzer is shared: run it while any layer has a shader.
+## Full-view camera effects (CameraFx) on the world's compositor, so both
+## the desktop view and the headset get them. The menus are left alone.
+func _init_camera_fx() -> void:
+	_camera_fx = CameraFx.new()
+	_camera_fx.name = "CameraFx"
+	add_child(_camera_fx)
+	_camera_fx.attach(world_env)
+	_camera_fx.audio = _audio
+	_camera_fx.mask_panels = [floating_panel.panel_quad(), xr_rig.wrist_panel]
+
+
+## A playing script's camera effect wins; otherwise the preset's. Called
+## every frame (script tracks animate it).
+func _update_camera_fx() -> void:
+	if _camera_fx == null:
+		return
+	var from_script := runner.camera_effect()
+	if not from_script.is_empty():
+		_camera_fx.show_effect(from_script.key, from_script.params, from_script.strength)
+	else:
+		var fx := _layers.camera_fx
+		_camera_fx.show_effect(fx.shader, fx.params, fx.strength)
+	if _camera_fx.is_running() != _camera_fx_running:
+		_camera_fx_running = _camera_fx.is_running()
+		_update_audio_active()
+	if _camera_fx.error_text() != _camera_fx_error:
+		_camera_fx_error = _camera_fx.error_text()
+		if _camera_tab != null:
+			_camera_tab.set_camera_fx_error(_camera_fx_error)
+
+
+## The analyzer is shared: run it while any layer has a shader (or a
+## camera effect is on).
 func _update_audio_active() -> void:
 	if _audio == null:
 		return
-	var running := runner.wants_audio()
+	var running := runner.wants_audio() or (_camera_fx != null and _camera_fx.is_running())
 	for node in _layer_nodes + _script_layers():
 		running = running or node.is_running()
 	_audio.set_active(running)
@@ -629,6 +666,8 @@ func _init_player_settings() -> void:
 
 
 func _apply_player_settings() -> void:
+	_camera_fx.enabled = _player_settings.camera_fx
+	_camera_fx.max_strength = _player_settings.camera_fx_max
 	var locked := _player_settings.locomotion == PlayerSettings.Locomotion.LOCKED
 	# Free movement's bindings (walk, turn) take the sticks from the media
 	# remote's; with it locked, Space plays / pauses instead of flying up.

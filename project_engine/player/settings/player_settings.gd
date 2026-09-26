@@ -26,6 +26,9 @@ extends RefCounted
 ##                           player (`--live-sync`); no effect otherwise.
 ##   fullscreen            — desktop window fills the screen (F11).
 ##   show_play_bar         — the desktop bottom media bar (H).
+##   camera_fx             — camera effects (full-view shaders) on at all.
+##   camera_fx_max         — 0..1 cap on their strength; neither a preset
+##                           nor a script goes past it.
 
 signal changed
 
@@ -87,6 +90,8 @@ var browser_last_dir: String = "": set = _set_browser_last_dir
 var live_sync: bool = true: set = _set_live_sync
 var fullscreen: bool = false: set = _set_fullscreen
 var show_play_bar: bool = true: set = _set_show_play_bar
+var camera_fx: bool = true: set = _set_camera_fx
+var camera_fx_max: float = 1.0: set = _set_camera_fx_max
 
 var _path: String = PATH
 var _loading: bool = false
@@ -122,6 +127,8 @@ func from_dict(d: Dictionary) -> void:
 	live_sync = bool(d.get("live_sync", true))
 	fullscreen = bool(d.get("fullscreen", false))
 	show_play_bar = bool(d.get("show_play_bar", true))
+	camera_fx = bool(d.get("camera_fx", true))
+	camera_fx_max = clampf(float(d.get("camera_fx_max", 1.0)), 0.0, 1.0)
 	_loading = false
 	changed.emit()
 
@@ -143,6 +150,8 @@ func to_dict() -> Dictionary:
 		"live_sync": live_sync,
 		"fullscreen": fullscreen,
 		"show_play_bar": show_play_bar,
+		"camera_fx": camera_fx,
+		"camera_fx_max": camera_fx_max,
 	}
 
 
@@ -258,3 +267,18 @@ func _set_browser_last_dir(v: String) -> void:
 	# listeners (skybox, volume, views) don't depend on it.
 	if not _loading:
 		save()
+
+
+func _set_camera_fx(v: bool) -> void:
+	if v == camera_fx:
+		return
+	camera_fx = v
+	_touch()
+
+
+func _set_camera_fx_max(v: float) -> void:
+	v = clampf(v, 0.0, 1.0)
+	if is_equal_approx(v, camera_fx_max):
+		return
+	camera_fx_max = v
+	_touch()

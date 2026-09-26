@@ -49,6 +49,12 @@ func _ready() -> void:
 		sub.gui_embed_subwindows = true
 
 
+## The panel's quad (an XRToolsViewport2DIn3D), e.g. for CameraFx to leave
+## alone.
+func panel_quad() -> Node3D:
+	return _vp2d3d
+
+
 ## Material for an XRToolsViewport2DIn3D panel: what it builds itself for
 ## unshaded + transparent, drawn at UI_RENDER_PRIORITY.
 static func ui_material() -> StandardMaterial3D:

@@ -18,6 +18,10 @@ extends VBoxContainer
 ##
 ## The view row (projection + reset view) isn't part of presets: projection
 ## is per video, reset view is an action. Both are signalled up to main.gd.
+##
+## At the bottom, the camera effect (a full-view shader; LayerStack's
+## camera_fx, saved with the preset): a picker, its strength and its hinted
+## uniforms, plus the compile error if the effect has one (set_camera_fx_error).
 
 signal projection_selected(key: String)  ## a VideoProjection.KEYS entry, incl. "auto"
 signal reset_view_requested
@@ -64,6 +68,10 @@ var _shader_keys: Array[String] = []  # parallel to shader_option items
 var _effect_options: Array[Dictionary] = []  # [{key, label}] for effect pickers
 var _watched: Array[Callable] = []  # per watched layer, its bound structure_changed handler
 var _refreshing: bool = false
+var _fx_picker: OptionButton
+var _fx_keys: Array[String] = []
+var _fx_box: VBoxContainer  # strength + the effect's own controls
+var _fx_error: Label
 
 
 func _ready() -> void:
@@ -119,6 +127,74 @@ func bind(settings: ScreenSettings, presets: PresetStore, layers: LayerStack = n
 		_presets.active_changed.connect(func(_i: int): _refresh_preset_list())
 	_refresh_preset_list()
 	_on_layers_changed()
+	if _layers != null:
+		_build_camera_fx_section()
+
+
+## Shown under the effect's controls; "" hides it.
+func set_camera_fx_error(text: String) -> void:
+	if _fx_error == null:
+		return
+	_fx_error.text = "Doesn't compile, " + text if text != "" else ""
+	_fx_error.visible = text != ""
+
+
+func _build_camera_fx_section() -> void:
+	add_child(HSeparator.new())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var label := Label.new()
+	label.text = "Camera effect"
+	label.tooltip_text = "A shader over everything you see (see the README for writing your own)"
+	row.add_child(label)
+	_fx_picker = OptionButton.new()
+	_fx_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fx_picker.fit_to_longest_item = false
+	_fx_picker.item_selected.connect(func(i: int): _layers.camera_fx.shader = _fx_keys[i])
+	row.add_child(_fx_picker)
+	var rescan := Button.new()
+	rescan.text = "Rescan"
+	rescan.tooltip_text = "Look for new camera effects in the shaders folders"
+	rescan.pressed.connect(_refresh_camera_fx)
+	row.add_child(rescan)
+	add_child(row)
+	_fx_box = VBoxContainer.new()
+	_fx_box.add_theme_constant_override("separation", 12)
+	add_child(_fx_box)
+	_fx_error = Label.new()
+	_fx_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_fx_error.add_theme_color_override("font_color", Color(1.0, 0.45, 0.45))
+	_fx_error.visible = false
+	add_child(_fx_error)
+	_layers.camera_fx.structure_changed.connect(_refresh_camera_fx)
+	_refresh_camera_fx()
+
+
+## Picker entries, and the strength + hinted controls for the current effect.
+func _refresh_camera_fx() -> void:
+	var fx := _layers.camera_fx
+	_fx_picker.clear()
+	_fx_keys = [""]
+	_fx_picker.add_item("None")
+	for opt in CameraFxShaders.list_options():
+		_fx_picker.add_item(opt.label)
+		_fx_keys.append(opt.key)
+	var idx := _fx_keys.find(fx.shader)
+	if idx < 0:
+		_fx_picker.add_item("%s (missing)" % fx.shader.get_file().get_basename())
+		_fx_keys.append(fx.shader)
+		idx = _fx_keys.size() - 1
+	_fx_picker.select(idx)
+	for c in _fx_box.get_children():
+		_fx_box.remove_child(c)
+		c.queue_free()
+	if fx.shader == "":
+		return
+	_fx_box.add_child(_param_control({"name": "strength", "type": "float", "min": 0.0, "max": 1.0, "step": 0.01},
+			fx.strength, func(v): fx.strength = v))
+	for spec in CameraFxShaders.params_of(CameraFxShaders.code_for(fx.shader)):
+		_fx_box.add_child(_param_control(spec, fx.params.get(spec.name, spec.default),
+				func(v): fx.set_param(spec.name, v)))
 
 
 func _refresh_preset_list() -> void:
@@ -411,7 +487,7 @@ func _on_save_pressed() -> void:
 	if id < 0 or PresetStore.is_locked(id):
 		return
 	var name := _current_preset_name()
-	_presets.save_preset(id, name, _settings.to_dict(), _layers_data())
+	_presets.save_preset(id, name, _settings.to_dict(), _layers_data(), _camera_fx_data())
 	_presets.set_active(id)
 
 
@@ -419,7 +495,7 @@ func _on_new_pressed() -> void:
 	if _presets == null or _settings == null:
 		return
 	var id := _presets.next_free_index()
-	_presets.save_preset(id, "Preset %d" % id, _settings.to_dict(), _layers_data())
+	_presets.save_preset(id, "Preset %d" % id, _settings.to_dict(), _layers_data(), _camera_fx_data())
 	_presets.set_active(id)  # → active_changed → list reselects it
 
 
@@ -454,3 +530,7 @@ func _find_item_by_id(id: int) -> int:
 
 func _layers_data() -> Array:
 	return _layers.to_array() if _layers != null else []
+
+
+func _camera_fx_data() -> Dictionary:
+	return _layers.camera_fx.to_dict() if _layers != null else {}

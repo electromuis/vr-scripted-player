@@ -8,8 +8,9 @@ extends RefCounted
 ## and is auto-created on first launch; it can't be deleted.
 ##
 ## A preset holds the main screen's values (`screen`, including its
-## effects) and the shader layers' (`layers`: a LayerSettings dict each, in
-## stack order). Presets from before the layer stack had at most a
+## effects), the shader layers' (`layers`: a LayerSettings dict each, in
+## stack order) and the camera effect (`camera_fx`, a CameraFxSettings dict;
+## absent = none). Presets from before the layer stack had at most a
 ## `visualizer` block, or `foreground` / `background` ones; those load as
 ## the equivalent layers.
 ##
@@ -63,7 +64,7 @@ func load_preset(index: int) -> Dictionary:
 	return parsed
 
 
-func save_preset(index: int, name: String, screen_data: Dictionary, layers_data: Array = []) -> bool:
+func save_preset(index: int, name: String, screen_data: Dictionary, layers_data: Array = [], camera_fx_data: Dictionary = {}) -> bool:
 	if is_locked(index):
 		return false
 	var data := {
@@ -74,6 +75,8 @@ func save_preset(index: int, name: String, screen_data: Dictionary, layers_data:
 	}
 	if not layers_data.is_empty():
 		data["layers"] = layers_data
+	if not camera_fx_data.is_empty():
+		data["camera_fx"] = camera_fx_data
 	if not _write(index, data):
 		return false
 	preset_saved.emit(index)
@@ -117,8 +120,8 @@ func delete_preset(index: int) -> bool:
 	return true
 
 
-## Load a preset's screen values into `settings` (and its layers into
-## `layers`, if given) and make it active.
+## Load a preset's screen values into `settings` (and its layers and
+## camera effect into `layers`, if given) and make it active.
 func apply(index: int, settings: ScreenSettings, layers: LayerStack = null) -> bool:
 	var preset := load_preset(index)
 	var screen = preset.get("screen", null)
@@ -127,6 +130,8 @@ func apply(index: int, settings: ScreenSettings, layers: LayerStack = null) -> b
 	settings.from_dict(screen)
 	if layers != null:
 		layers.from_array(layers_of(preset))
+		var fx = preset.get("camera_fx", {})
+		layers.camera_fx.from_dict(fx if typeof(fx) == TYPE_DICTIONARY else {})
 	set_active(index)
 	return true
 

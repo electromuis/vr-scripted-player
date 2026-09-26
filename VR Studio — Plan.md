@@ -64,6 +64,16 @@ Rejected alternatives, and why:
 - **Checked beyond the tests:** the real main scene booted with every command fired and keys pushed through `_unhandled_input`, and the Controls tab rebound a command end to end; screenshots rendered under Xvfb (`docs/player/controls_tab.png`). **Not yet tried on a headset.**
 - **Left for later:** the controller picture from the mockup (pointing at a button shows what it does), saving your own named profiles, and Studio's own contexts (M2).
 
+### Camera shaders in the player (milestone FX)
+- **How they render:** not the quad planned below. Godot captures the screen texture *before* transparent objects, and the video screen and layers draw with transparency, so a quad reading it would warp the world but not the video. Instead `player/visualizer/camera_fx_effect.gd` is a **`CompositorEffect`** on the WorldEnvironment (after transparent objects): per eye (`get_view_count()`), a compute pass copies the image, then the effect's compute shader writes the result. It needs Forward+ or Mobile (RenderingDevice); on Compatibility it doesn't run.
+- **Effects are GLSL** (compute shaders can't use Godot's shading language): a `// @camera` file with `vec3 camera_fx(vec2 uv)`. `camera_fx_shaders.gd` wraps it, turning `hint_range` uniforms into reads from a storage buffer (so they get the same sliders as layers) and mapping compile errors back to the file's own line numbers. Six built-ins live there as constants: kaleidoscope, hue cycle, liquid warp, chromatic pulse, posterize glow, breathing.
+- **Menus stay readable:** the F2 panel's and the wrist HUD's quads are projected to each eye's image every frame and skipped by the pass.
+- **Where it lives:** `CameraFx` (`camera_fx.gd`) picks what shows. A playing script's `camera` block wins, else the preset's (`LayerStack.camera_fx`, saved as `camera_fx` in presets). It applies the Config limits (`camera_fx` on/off, `camera_fx_max`) and keeps the audio analyzer running while it's on. The Camera tab has a *Camera effect* section (picker, Strength, the effect's sliders, compile errors); the Config tab has *Camera effects* and *Effects at most*.
+- **In scripts:** top-level `"camera": {"effects": [{"shader", "params", "strength", "enabled"}]}` (shader keys in `shaders`; `"builtin:kaleidoscope"` works as a value), and `shader_param` tracks on `$camera.effect0`, including `strength`. It's an addition to format 2 (older players ignore it), so no version bump. Only the first enabled effect runs.
+- **Tests:** `tests/test_camera_fx.gd` (10) covers compiling, sources and params, error lines, file discovery, settings and presets, limits, and the script block and tracks.
+- **Checked by rendering** under Xvfb with Mesa's software Vulkan (lavapipe): every built-in compiles and renders over the real main scene, the open menu stays untouched, a broken user file shows `line 4: 'wobbel' : undeclared identifier`, and a script's camera block overrides the preset with its strength track and the user's cap applied. Screenshots in `docs/player/`. **Not tried in a headset:** the per-eye path (two views) is written for multiview but only one view ran here.
+- **Left for later:** several effects at once (chaining), feedback trails (needs the previous frame), and Shadertoy `mainImage` code as camera effects.
+
 ## Studio design
 
 ### What it's for
@@ -238,16 +248,8 @@ Today the script moves the viewer only by jumping (`vr_cut`, with an optional fa
 
 ### Camera shaders
 Full-view effects over everything the viewer sees: kaleidoscopes, colour cycling, liquid warps, bass-driven chromatic aberration, and later feedback trails.
-- **How they render:** a quad glued in front of the camera (the same trick as today's `VRFade` fade quad) with a shader that reads the rendered image (`hint_screen_texture`) and writes a changed one.
-  - This works in all of Godot's renderers and per eye in VR.
-  - If the screen texture misbehaves with VR's two-eye rendering on the target headset, the fallback is a `CompositorEffect` (a compute pass on the final image). That's more work and needs the Forward+ renderer.
-- **Writing one:** a `.gdshader` with a `// @camera` hint that includes `camera_prelude.gdshaderinc`. The prelude provides:
-  - `view_color(uv)` to sample what's rendered
-  - `eye` (0 left, 1 right)
-  - `strength`: a master 0–1 amount every camera shader respects, so a fade in/out works for any of them
-  - the same audio inputs as layers: `audio_bass` / `audio_mid` / `audio_high` / `audio_level`, and the spectrum texture
-
-  They go in the same `shaders` folders as layers and effects, and show up in the picker. Shadertoy code works too, with a small wrapper where `iChannel1` is the rendered view.
+- **How they render:** built as a `CompositorEffect` compute pass (see *Camera shaders in the player* under *Done*). The quad planned here couldn't see the see-through video and layers.
+- **Writing one:** a GLSL file with a `// @camera` line and `vec3 camera_fx(vec2 uv)` (see the README), in the same `shaders` folders as layers.
 - **Built-ins to start with:** kaleidoscope, hue cycle, liquid warp, chromatic pulse (on bass), posterize + edge glow, and "breathing" (a gentle zoom pulse). Each is sound-reactive with a sensible default.
 - **Later:** *feedback trails* (blending in the previous frame for echoes and smears) need a history buffer, so they go through the `CompositorEffect` route. The same goes for chaining several camera shaders; v1 runs one at a time.
 - **In the format:** a top-level `camera` block holds the effects list, in the same shape as a screen's effects (`shader`, `params`, `enabled`). Parameters animate with `shader_param` tracks on target `$camera.effect<N>`, so keying `strength` from 0 to 1 is how a trip starts and ends.
@@ -298,7 +300,7 @@ Full-view effects over everything the viewer sees: kaleidoscopes, colour cycling
 
 ### Format additions (v3)
 - **Viewer track:** `transform` tracks with target `$viewer`, channels `position` and `rotation_deg` (plus a flat-output-only `fov`). A cut is a key with `"interp": "step"` and an optional `"transition": {"type": "fade_to_black", "duration": 1}`. v2 `vr_cut` events load as such keys.
-- **Camera block:** top-level `"camera": {"effects": [{"shader", "params", "enabled"}]}`; tracks target `$camera.effect<N>`.
+- **Camera block:** done, as an addition to format 2 (see *Camera shaders in the player*).
 - Ids starting with `$` are reserved for these, so they can't collide with object names.
 
 ### Architecture
@@ -335,7 +337,7 @@ Each ends in something usable, with a clear "done when".
 | M8 | **Polish**: haptics, comfort, visual pass, left-handed mode, looks/presets | A first-time user can place, key and play back a screen in 10 minutes unaided |
 
 | IN ✅ | **Controls and remapping** in the *player*: commands, input router, Controls tab, profiles, keyboard; `xr_rig` / `xr_movement` moved onto it | Rebind play/pause to X on a Quest 3, the default profile still behaves exactly as today, and all binding tests pass. Studio adds its Edit context from M2 on |
-| FX | **Camera shaders** in the *player* (not Studio): camera quad + prelude + built-ins, Camera FX in the Camera tab and presets, format `camera` block, user limits | A kaleidoscope reacts to the bass on a plain video in the headset, the same in both eyes; strength keys in a script fade it in and out |
+| FX ✅ | **Camera shaders** in the *player* (not Studio): compositor pass + GLSL wrapper + built-ins, Camera FX in the Camera tab and presets, format `camera` block, user limits | A kaleidoscope reacts to the bass on a plain video in the headset, the same in both eyes; strength keys in a script fade it in and out |
 
 M1–M3 are the smallest thing that's already better than the desktop for layout. M6 is the feature that makes Studio worth opening.
 
@@ -356,7 +358,7 @@ M1–M3 are the smallest thing that's already better than the desktop for layout
 - **Should Studio also open plain videos**, to start a new piece from a video file (create `clip.json` next to it)? I'd say yes. It's the natural "new piece" flow.
 
 ## Known issues
-- All 151 player tests pass, as does the round-trip test.
+- All 160 player tests pass, as does the round-trip test.
 - `scripts/forest_tunnel/video.json` is still a v1 export (bezier tracks baked to linear keys, within 0.001 of the curves). Its events match the current scene; re-export from the editor for the exact curves and format v2.
 - `scripts/minimal` has no objects, so the exporter refuses it (by design). The round-trip test skips it.
 
@@ -367,6 +369,7 @@ M1–M3 are the smallest thing that's already better than the desktop for layout
 - **Player tests:** `cd project_engine && godot --headless --import && godot --headless --script res://tests/run.gd`.
 - **XR Tools** isn't in the repo; without it, anything touching the XR rig doesn't compile and those tests pass without checking much. Install 4.5.1 into `project_engine/addons/godot-xr-tools/` (gitignored) from `https://github.com/GodotVR/godot-xr-tools/releases/download/4.5.1/godot-xr-tools.zip`. Under Godot 4.7 its `objects/viewport_2d_in_3d.gd` fails to parse: add `return null` at the end of `_property_get_revert` in the local copy.
 - **gde_gozen has no Linux binary here**, so `main.gd` doesn't compile in the container. To run the real main scene, copy `project_engine` to the scratchpad and replace `GoZenVideo.new()` / `AudioStreamFFmpeg.new()` (in `player/video_bridge.gd` and `addons/gde_gozen/video_playback.gd`) with `ClassDB.instantiate(...)` and drop those type hints. Then a `SceneTree` script can instantiate `res://player/main.tscn` and drive it.
+- **Forward+ (Vulkan) rendering** for compositor effects: download `mesa-vulkan-drivers` with `apt-get download`, unpack it with `dpkg-deb -x`, point a copy of `lvp_icd.json` at the unpacked `libvulkan_lvp.so`, and run with `VK_ICD_FILENAMES=<that json>` plus `--rendering-method forward_plus --rendering-driver vulkan` under `xvfb-run`.
 - **Screenshots:** Xvfb and Mesa are installed. `xvfb-run -a -s "-screen 0 1600x1000x24" godot --rendering-method gl_compatibility --rendering-driver opengl3 --script <script>` renders for real; a panel's viewport only redraws while the panel is shown (`floating_panel.toggle()`).
 - **Round-trip test:** link the addon into an authoring project first (gitignored, like your Windows junctions): `ln -sfn ../../addon_vj project_script_example/addons/vj_editor`. Then `cd project_script_example && godot --headless --import && godot --headless --script res://addons/vj_editor/tests/run_roundtrip.gd`.
 - **Stray `.import` edits:** headless `--import` rewrites a few `.import` files (gde_gozen icons, `effect_icon.svg.import`). Revert them with `git checkout` before committing. `.uid` files and `.godot/` are gitignored.
