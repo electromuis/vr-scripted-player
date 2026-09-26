@@ -13,8 +13,8 @@ extends XROrigin3D
 ## trigger clicks).
 ##
 ## The rig is added to the scene tree but stays hidden until VR is entered.
-## main.gd owns lifecycle (show/hide, wiring the wrist HUD to the runner,
-## routing menu_button to the floating panel).
+## The Stage shows and hides it with VR; main.gd does the wiring (the wrist
+## HUD to the runner, menu_button to the floating panel).
 
 ## Debug: log every controller button press to stdout so it's easy to
 ## verify which action names the current headset's interaction profile is
@@ -22,7 +22,7 @@ extends XROrigin3D
 ## settled.
 const DEBUG_LOG_BUTTONS := true
 
-## Polls these controllers; set by main.gd.
+## Polls these controllers; set by the Stage.
 var router: InputRouter:
 	set(value):
 		router = value
@@ -116,7 +116,7 @@ static func ray_hits_quad(from: Vector3, dir: Vector3, quad_xform: Transform3D, 
 	return absf(p.x) <= size.x * 0.5 and absf(p.y) <= size.y * 0.5
 
 
-## Toggle the wrist HUD's own `visible` flag. main.gd calls this on VR
+## Toggle the wrist HUD's own `visible` flag. The Stage calls this on VR
 ## enter/exit instead of hiding the whole rig, because
 ## XRToolsViewport2DIn3D only re-enables its collider on its *own*
 ## visibility_changed signal — ancestor visibility flips don't fire it,
@@ -140,7 +140,7 @@ func wrist_content() -> Node:
 
 
 ## Fade to black over half the duration, run at_black, fade back. Mirrors
-## FadeOverlay.fade_through so main.gd can call one API regardless of mode.
+## FadeOverlay.fade_through so the Stage can call one API regardless of mode.
 func fade_through(duration: float, at_black: Callable) -> void:
 	var half := duration * 0.5
 	if half < 0.02:

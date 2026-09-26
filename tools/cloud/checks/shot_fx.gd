@@ -25,15 +25,15 @@ func _initialize() -> void:
 	var card := ImageTexture.create_from_image(img)
 	var screen = main.runner.registry().get_node_by_id(DefaultScreen.SCREEN_ID)
 	screen.set_source_texture(card)
-	main._layers.set_count(1)
-	var layer: LayerSettings = main._layers.layers[0]
+	main.stage.layers.set_count(1)
+	var layer: LayerSettings = main.stage.layers.layers[0]
 	layer.shader = "res://player/visualizer/shaders/spectrum_bars.gdshader"
 	layer.size = 2.4
 	layer.distance = 2.0
 	for i in 40:
 		await process_frame
 	root.get_texture().get_image().save_png(out.path_join("fx_none.png"))
-	var fx: CameraFxSettings = main._layers.camera_fx
+	var fx: CameraFxSettings = main.stage.layers.camera_fx
 	for key in CameraFxShaders.BUILTINS:
 		fx.shader = key
 		fx.strength = 1.0
@@ -41,7 +41,7 @@ func _initialize() -> void:
 			await process_frame
 		var name := String(key).trim_prefix("builtin:")
 		root.get_texture().get_image().save_png(out.path_join("fx_%s.png" % name))
-		print(name, " error='", main._camera_fx.error_text().left(300), "'")
+		print(name, " error='", main.stage.camera_fx.error_text().left(300), "'")
 	# The menu stays readable under an effect.
 	fx.shader = "builtin:kaleidoscope"
 	main.floating_panel.toggle()

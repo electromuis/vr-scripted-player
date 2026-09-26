@@ -33,10 +33,10 @@ const Modifiers := preload("res://player/runtime/modifiers.gd")
 var timeline: TimelineData
 var playhead: float = 0.0
 var playing: bool = false
-## Stops the clock without leaving play: main.gd sets it while the video is
+## Stops the clock without leaving play: the Stage sets it while the video is
 ## opening or seeking so the timeline doesn't run ahead of the picture.
 var hold: bool = false
-## The music's bass level (0..1) for `pulse` (see Modifiers); main.gd feeds
+## The music's bass level (0..1) for `pulse` (see Modifiers); the Stage feeds
 ## it from the audio analyzer while wants_audio().
 var audio_bass: float = 0.0
 
@@ -330,7 +330,7 @@ func _dispatch_event(ev: Dictionary) -> void:
 		"spawn": _do_spawn(ev)
 		"despawn": _do_despawn(ev)
 		"vr_cut", "vr_teleport":
-			pass  # Camera application lives in main.gd via event_fired.
+			pass  # Camera application lives in the Stage (player/stage/) via event_fired.
 
 
 func _do_spawn(ev: Dictionary) -> void:
@@ -405,7 +405,7 @@ func _setup_modifiers(id: String, node: Node3D, cfg: Dictionary) -> void:
 	}
 
 
-## Whether any object pulses with the music (main.gd runs the analyzer).
+## Whether any object pulses with the music (the Stage runs the analyzer).
 func wants_audio() -> bool:
 	for state in _reactive.values():
 		if state.uses_audio:

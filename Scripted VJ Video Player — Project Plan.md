@@ -387,7 +387,8 @@ c:\dev\VRmviewer\
 │   └── gut/                              # vendored for tests
 │
 ├── player/                               # standalone player runtime
-│   ├── main.tscn / main.gd
+│   ├── main.tscn / main.gd               # the player app: files, playlist, menus, commands
+│   ├── stage/stage.tscn / stage.gd       # rendering core shared with Studio (see VR Studio — Plan.md)
 │   ├── script_format/
 │   │   ├── script_format.gd              # parser
 │   │   └── timeline_data.gd

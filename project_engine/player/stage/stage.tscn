@@ -1,0 +1,70 @@
+[gd_scene format=3 uid="uid://cvjstage00001"]
+
+[ext_resource type="Script" path="res://player/stage/stage.gd" id="1_stage"]
+[ext_resource type="Script" uid="uid://bv4q2i4x07iek" path="res://player/runtime/script_runner.gd" id="2_runner"]
+[ext_resource type="Script" uid="uid://bk7lknnlgeylw" path="res://player/desktop_camera.gd" id="3_camera"]
+[ext_resource type="Script" uid="uid://dp2lulhx4plvi" path="res://player/vr/xr_mode.gd" id="4_xrmode"]
+[ext_resource type="Script" uid="uid://c6nft488xlp0s" path="res://player/ui/fade_overlay.gd" id="5_fade"]
+[ext_resource type="PackedScene" uid="uid://cvjxrrig00001" path="res://player/vr/xr_rig.tscn" id="7_xrrig"]
+
+[sub_resource type="Environment" id="Env_default"]
+background_mode = 1
+background_color = Color(0, 0, 0, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.4, 0.4, 0.5, 1)
+ambient_light_energy = 0.4
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(50, 50)
+
+[sub_resource type="StandardMaterial3D" id="Mat_floor"]
+albedo_color = Color(0.15, 0.15, 0.15, 1)
+roughness = 0.9
+
+[node name="Stage" type="Node3D" unique_id=1102938471]
+script = ExtResource("1_stage")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1997981467]
+environment = SubResource("Env_default")
+
+[node name="DesktopCamera" type="Camera3D" parent="." unique_id=624821593]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 8)
+current = true
+script = ExtResource("3_camera")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=920055371]
+transform = Transform3D(1, 0, 0, 0, 0.7071, 0.7071, 0, -0.7071, 0.7071, 0, 5, 5)
+light_energy = 0.8
+
+[node name="World" type="Node3D" parent="." unique_id=1956869830]
+
+[node name="Floor" type="MeshInstance3D" parent="World" unique_id=275885058]
+visible = false
+mesh = SubResource("PlaneMesh_floor")
+surface_material_override/0 = SubResource("Mat_floor")
+
+[node name="ScreenMount" type="Node3D" parent="World" unique_id=1421398723]
+
+[node name="ScriptRunner" type="Node" parent="." unique_id=56276436]
+script = ExtResource("2_runner")
+stage_path = NodePath("../World")
+autostart = true
+inject_default_screen = true
+
+[node name="XRMode" type="Node" parent="." unique_id=172175066]
+script = ExtResource("4_xrmode")
+
+[node name="XRRig" parent="." unique_id=1959752196 instance=ExtResource("7_xrrig")]
+
+[node name="Overlay" type="CanvasLayer" parent="." unique_id=854086634]
+layer = 2
+
+[node name="FadeOverlay" type="ColorRect" parent="Overlay" unique_id=435489811]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0)
+script = ExtResource("5_fade")

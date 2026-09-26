@@ -20,7 +20,7 @@ func _initialize() -> void:
 		await process_frame
 	var content: Node = main.floating_panel.content()
 	main.floating_panel.toggle()
-	var fx: CameraFxSettings = main._layers.camera_fx
+	var fx: CameraFxSettings = main.stage.layers.camera_fx
 	fx.shader = "builtin:kaleidoscope"
 	var scroll: ScrollContainer = content.camera_tab.get_parent()
 	for i in 10:

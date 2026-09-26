@@ -17,7 +17,7 @@ func _initialize() -> void:
 		if c is HBoxContainer:
 			rows += 1
 	print("command rows: ", rows, " of ", InputBindings.COMMANDS.size())
-	var router: InputRouter = main._router
+	var router: InputRouter = main.stage.router
 	var fired: Array = []
 	router.command.connect(func(id): fired.append(String(id)))
 	# Rebind play/pause to Y (left B/Y button), as the + button would.

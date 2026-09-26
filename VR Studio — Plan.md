@@ -80,20 +80,22 @@ Rejected alternatives, and why:
 - **Checked by rendering** under Xvfb with Mesa's software Vulkan (lavapipe): every built-in compiles and renders over the real main scene, the open menu stays untouched, a broken user file shows `line 4: 'wobbel' : undeclared identifier`, and a script's camera block overrides the preset with its strength track and the user's cap applied. Screenshots in `docs/player/`. **Not tried in a headset:** the per-eye path (two views) is written for multiview but only one view ran here.
 - **Left for later:** several effects at once (chaining), feedback trails (needs the previous frame), and Shadertoy `mainImage` code as camera effects.
 
-## Next: M0, extract the stage from `main.gd`
-Behaviour must not change; this is the groundwork for Studio sharing the player's rendering. `project_engine/player/main.gd` is about 1,100 lines doing two jobs.
+### Stage extracted from `main.gd` (milestone M0)
+- **`player/stage/stage.tscn` + `stage.gd` (`Stage`)** is the rendering core Studio will reuse: WorldEnvironment, light, DesktopCamera, `World` (Floor, ScreenMount; the runner's spawn root, was the inner `Stage` node), ScriptRunner, XRMode, XRRig and the fade overlay (its own CanvasLayer, layer 2). In code: the video and audio analyzer, screen settings, preset look switching for scripts, shader layers, camera effects, projection, cuts and fades, reset view, entering / leaving VR (the view half) and the input router.
+- **API for the app:** `setup(player_settings, bindings)`; the parts as fields (`runner`, `router`, `video`, `camera_fx`, `screen_settings`, `layers`, `preset_store`, `desktop_camera`, `xr_rig`, `xr_mode`, `video_path`, `pending_start`); `reset_view()`, `seek_to(t)`, `apply_projection()`, `set_projection_override(key)`, `add_masked_panel(node)`; signals `status`, `media_path_changed`, `video_opening`, `projection_changed`, `camera_fx_error_changed`. The app connects to `router.command` for its own commands.
+- **`main.gd` is now the player shell** (about 500 lines, was 1,100): CLI, open file / URL, playlist, DLNA and thumbnails, Whirligig, live sync, menus and wrist HUD wiring, window settings, top bar, `_on_command`. `main.tscn` = Stage instance + FloatingPanel + UI (top bar) + PlayBar (a CanvasLayer at 3, so the play bar stays above fades as before). Settings are split the same way: the stage applies volume, skybox, floor and camera effect limits; main the controls context, window and live sync.
+- **Nothing changed, checked side by side** against the previous commit (a clean worktree, user data reset before every check): 160/160 tests; `drive.gd`, `drive_controls.gd`, `drive_script_fx.gd` print the same; the menus, the Controls tab, `fx_none` and the static effects render pixel-identical (animated effects differ between two runs of the *same* code, so they were compared by eye). A new check, `checks/drive_stage.gd`, plays a script with a plain cut and a faded cut, moves the screen, switches looks and projection and resets the view; its output is identical before and after. Contact sheet: `docs/player/m0_before_after.png`. **Not tried on a headset**: entering / leaving VR and the in-headset fade moved to the stage unchanged, but nothing here can run them.
 
-**Core, moves to `player/stage/` (a `Stage` node, scene + script) that Studio will reuse:**
-- Nodes: WorldEnvironment, DirectionalLight3D, Stage (Floor, ScreenMount), ScriptRunner, XRMode, XRRig, FloatingPanel (the menu stays per app, but its node/placement helpers are shared), UI/FadeOverlay.
-- Functions: `_init_video`, `_on_object_spawned`, `_load_video_for`, `_show_loading_thumbnail`, `_on_video_loaded`, `_on_video_load_failed`, `_init_screen_settings`, `_apply_screen_settings`, `_apply_screen_display`, `_screens_under`, `_apply_display_to`, `_rebuild_layers`, `_apply_layer`, `_place_layer`, `_place_layers`, `_update_layer_anchor`, `_init_camera_fx`, `_update_camera_fx`, `_update_audio_active`, `_script_layers`, `_on_curvature_maybe_changed`, `_apply_curvature`, `_current_projection`, `_apply_projection`, `_apply_video_to_layer`, `_apply_look_for`, `_on_event_fired`, `_apply_camera_cut`, `_snap_camera`, `reset_view`, `_on_entered_vr` / `_on_exited_vr` (the XR half), the input router setup (`_init_input`) with the app registering its own commands.
-
-**Shell, stays in `main.gd` (the player app):** CLI args, `open_file` / `open_url` / files dropped, playlist (`play_next`, `play_previous`, `_step_playlist`), DLNA, Whirligig, live sync, presets UI wiring (`_bind_panel_content`), wrist HUD binding, media controls, top bar / status / FPS label, `_on_command` for player commands, quit.
+## Next: M1, Studio skeleton
+`project_engine/studio/` gets its own main scene on the Stage; the player stays untouched (dependencies one way: `studio/` → `player/stage/`).
 
 **Steps**
-1. Create `player/stage/stage.tscn` + `stage.gd` with the core nodes and functions above; `main.tscn` instances it and `main.gd` talks to it through a small API (open a timeline / video, play, seek, settings objects, signals for loaded / failed / cut).
-2. Keep node paths the tests and checks use working, or update them (`tests/*`, `tools/cloud/checks/*`: they reach `main._router`, `main._layers`, `main._camera_fx`, `main.floating_panel`, `main.runner`, `main._player_settings`).
-3. Prove nothing changed: all tests pass (160 now); `HEADLESS=1 tools/cloud/run.sh checks/drive.gd`, `checks/drive_controls.gd`, `checks/drive_script_fx.gd` print the same as before; `tools/cloud/run.sh checks/shot_fx.gd`, `checks/shot_ui.gd`, `checks/shot_controls.gd` render the same pictures. Send the user a contact sheet of before/after.
-4. Then M1 (Studio skeleton): `project_engine/studio/studio.tscn` = stage + studio rig, open a piece (one video + its JSON), Play/Edit toggle, save, undo, the edit model with tests.
+1. **Edit model** (`studio/model/edit_model.gd`, pure data, headless tests first): load a script JSON into an in-memory document, commands with do/undo (set spawn transform, set config value, set / move / delete key, add / remove object), an undo stack with redo, a dirty flag, and save through `ScriptFormat` validation. Saving an unchanged document must write the file **byte-identical** (so the writer has to match the files' formatting, or keep the original text until something changes).
+2. **Seeking back past a cut** (see *Prerequisites and risks*): the runner / stage restores the viewer pose from the latest cut at or before the playhead when seeking. Test in `tests/`, and extend `checks/drive_stage.gd`.
+3. **Studio scene** (`studio/studio.tscn` + `studio.gd`): the Stage plus a studio shell. Opens a piece from the command line (`--piece <json>`, or a video with a sidecar JSON), with Studio's own commands and contexts (*Play*, *Edit*) registered on the router: toggle Play/Edit (≡ / Tab), play/pause, scrub, undo (B / Ctrl+Z), redo (hold B / Ctrl+Shift+Z), save (Ctrl+S). Edit mode shows a minimal wrist / desktop status (mode, time, dirty); Play mode shows nothing.
+4. **Runner patching from the model**: key and config edits patch the runner's loaded timeline in place (no reload); structural ones go through the existing reconcile.
+5. **Export preset / launch:** a *Studio* run configuration (`build_and_run.bat` option) with `studio/studio.tscn` as its main scene.
+6. **Prove it:** tests for the edit model and the cut fix; a `checks/drive_studio.gd` that opens forest_tunnel, toggles modes, edits and undoes, saves unchanged (byte-identical) and saves an edit (the player then plays it); renders of Studio in Edit and Play mode for the user.
 
 ## Studio design
 
@@ -329,7 +331,7 @@ Full-view effects over everything the viewer sees: kaleidoscopes, colour cycling
 project_engine/
   player/
     stage/     ← extracted from main.gd: video, runner, screens/layers, audio, XR rig, cuts
-    app/       ← the player shell (files, DLNA, playlist, whirligig, presets, menus)
+    main.gd    ← the player shell (files, DLNA, playlist, whirligig, menus); stayed in place
   studio/
     studio.tscn           stage + studio rig + panels
     model/ edit_model.gd  JSON document + commands + undo stack (pure data, headless-testable)
@@ -347,7 +349,7 @@ Each ends in something usable, with a clear "done when".
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | **Stage extraction** from `main.gd` (no behaviour change) | 137 tests pass; the player works unchanged on a headset |
+| M0 ✅ | **Stage extraction** from `main.gd` (no behaviour change) | All tests pass and the checks match the previous version; the player works unchanged on a headset (not yet tried) |
 | M1 | **Studio skeleton**: open a piece, Play/Edit toggle, save, undo/redo, edit model with tests | Open forest_tunnel, toggle modes, save → the file is byte-identical when nothing changed |
 | M2 | **Select and move**: pick boxes, ray/direct grab, two-hand, snapping, auto-key, noclip flight, jump buttons, audience seat | Re-lay out moving_screen by hand, flying around it; auto-key keys play back right in the player |
 | M3 | **Inspector**: hint-generated params, effects stack, key diamonds, colour wheel | Retune a screen's glow and add/reorder effects without touching the desktop |
@@ -393,7 +395,9 @@ HEADLESS=1 tools/cloud/run.sh checks/drive.gd         # no rendering
 tools/cloud/sheet.sh out.png a.png b.png ...          # contact sheet to send the user
 ```
 
-- **Checks** (`tools/cloud/checks/`): `drive.gd` (every command, keys, contexts), `drive_controls.gd` (rebinding), `drive_script_fx.gd` (script camera effect, limits), `shot_fx.gd` (each camera effect over a test card, menu mask), `shot_ui.gd` (Camera tab effect section, compile error, Config tab), `shot_controls.gd` (Controls tab; `SCROLL=1` for the bottom). Copy one to write a new check: a `SceneTree` script that instantiates `res://player/main.tscn`, waits a few frames, drives it, and saves `root.get_texture().get_image()` (the 3D view) or a panel's `content.get_viewport()` image (open it first with `floating_panel.toggle()`: a hidden panel doesn't redraw).
+- **Checks** (`tools/cloud/checks/`): `drive.gd` (every command, keys, contexts), `drive_stage.gd` (a script's cuts and fade, looks, projection, reset view), `drive_controls.gd` (rebinding), `drive_script_fx.gd` (script camera effect, limits), `shot_fx.gd` (each camera effect over a test card, menu mask), `shot_ui.gd` (Camera tab effect section, compile error, Config tab), `shot_controls.gd` (Controls tab; `SCROLL=1` for the bottom). Copy one to write a new check: a `SceneTree` script that instantiates `res://player/main.tscn`, waits a few frames, drives it (the player shell is `main`, the rendering core `main.stage`), and saves `root.get_texture().get_image()` (the 3D view) or a panel's `content.get_viewport()` image (open it first with `floating_panel.toggle()`: a hidden panel doesn't redraw).
+- **Checks share the player's user data** (`~/.local/share/godot/app_userdata/Scripted VJ Video Player`: settings, presets, bindings) and some change it, so delete that folder before each check when comparing runs, and never run two checks at once (they also share `$WORK/engine_copy`; give a second run its own `WORK`).
+- **Comparing with an earlier version:** `git worktree add <dir> <commit>`, copy `project_engine/addons/godot-xr-tools` into it, and run its own `tools/cloud/run.sh` with a separate `WORK`. Animated camera effects never render the same twice; compare those by eye.
 - **Why a copy:** `run.sh` copies `project_engine` to `$WORK/engine_copy` and makes the gde_gozen classes dynamic (`ClassDB.instantiate`), since there's no Linux decoder build and `main.gd` wouldn't compile otherwise. The screen shows a placeholder instead of video (checks can put a test image on it with `set_source_texture`). Never commit that patch.
 - **Player tests:** `cd project_engine && $GODOT --headless --import && $GODOT --headless --script res://tests/run.gd` (`$GODOT` = `$WORK/godot/Godot_v4.7.1-stable_linux.x86_64`). They need XR Tools installed (setup.sh does it, gitignored, with a one-line patch for Godot 4.7); without it the XR rig doesn't compile and those tests pass without checking much.
 - **Round-trip test (addon):** link the addon into an authoring project (gitignored, like the Windows junctions): `ln -sfn ../../addon_vj project_script_example/addons/vj_editor`, then `cd project_script_example && $GODOT --headless --import && $GODOT --headless --script res://addons/vj_editor/tests/run_roundtrip.gd`.

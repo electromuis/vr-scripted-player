@@ -16,7 +16,7 @@ extends RefCounted
 ##                (positive = swings up overhead and faces down, for
 ##                reclined viewing; it stays at the same distance)
 ##   curvature  — 0..1, flat to half-cylinder; not a mount transform —
-##                main.gd pushes it to the screen's display shader
+##                the Stage pushes it to the screen's display shader
 ##   vertical_curvature — 0..1, the same bend top-to-bottom
 ##   opacity    — 0..1, likewise a display-shader value, not a transform
 ##   resolution — RESOLUTION_MIN..RESOLUTION_MAX multiplier on the pixel

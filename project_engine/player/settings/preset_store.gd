@@ -16,7 +16,7 @@ extends RefCounted
 ##
 ## Preset 0, "Script (defaults)", is built in and locked: never a file, it
 ## can't be saved over, renamed or deleted. It is the software defaults with
-## no effects or layers, and main.gd switches to it while a script plays so
+## no effects or layers, and the Stage switches to it while a script plays so
 ## the piece looks as authored.
 ##
 ## Also tracks which preset is active (last applied; shared by the Camera

@@ -2,7 +2,7 @@ class_name VideoBridge
 extends Node
 
 ## Owns a gde_gozen VideoPlayback (FFmpeg-based decoder). Exposes a small,
-## decoder-agnostic API so main.gd doesn't touch gozen internals.
+## decoder-agnostic API so the Stage doesn't touch gozen internals.
 ##
 ## Design: VideoPlayback is a Control that renders its video with a
 ## `shader_type canvas_item` YUV→RGB shader. That won't run on a 3D mesh
@@ -26,7 +26,7 @@ extends Node
 ## every scrub step. A seek now runs as a WorkerThreadPool task while the
 ## decoder is paused; requests arriving meanwhile collapse into one follow-up
 ## seek to the latest position. `busy_changed` reports seeks and loads so
-## main.gd can hold the timeline clock, and a "Seeking..." / "Loading..."
+## the Stage can hold the timeline clock, and a "Seeking..." / "Loading..."
 ## card is drawn into the video frame itself (once per eye for stereo
 ## layouts, see set_overlay_stereo) when one takes long enough to notice.
 ## While a video opens, set_loading_thumbnail can put its thumbnail in the

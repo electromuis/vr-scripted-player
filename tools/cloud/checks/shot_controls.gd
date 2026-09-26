@@ -13,7 +13,7 @@ func _initialize() -> void:
 	var margin: Node = content.controls_tab.get_parent().get_parent()
 	var tabs: TabContainer = margin.get_parent()
 	print("tabs: ", tabs.get_path(), " controls idx ", margin.get_index())
-	var router: InputRouter = main._router
+	var router: InputRouter = main.stage.router
 	router.bindings.assign("previous_video", {"input": "R.by", "gesture": "double"})
 	router.bindings.assign("reset_view", {"input": "L.menu", "gesture": "hold"})
 	content.controls_tab._on_add_pressed("toggle_vr")

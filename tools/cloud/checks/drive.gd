@@ -8,7 +8,7 @@ func _initialize() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	var router: InputRouter = main._router
+	var router: InputRouter = main.stage.router
 	print("router ok: ", router != null, " contexts locked=", router.is_context_active("locked"), " free=", router.is_context_active("free"))
 	for id in InputBindings.COMMANDS:
 		if InputBindings.command_kind(id) != "axis":

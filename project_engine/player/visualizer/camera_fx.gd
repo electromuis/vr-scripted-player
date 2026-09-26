@@ -2,7 +2,7 @@ class_name CameraFx
 extends Node
 
 ## Full-view camera effects: kaleidoscopes, colour cycling, warps over
-## everything the viewer sees. main.gd picks what shows (`show_effect`: the
+## everything the viewer sees. The Stage picks what shows (`show_effect`: the
 ## script's camera effect while one plays, else the preset's), the user's
 ## limits (`enabled`, `max_strength`) cap it, and the menus stay readable
 ## (`mask_panels` are left untouched).

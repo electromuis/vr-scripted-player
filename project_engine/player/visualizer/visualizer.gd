@@ -4,7 +4,7 @@ extends Node3D
 ## One shader layer: a sound-reactive shader drawn on its own screen, with
 ## the layer's effects after it. This node is the layer's mount
 ## (LayerSettings positions it, as ScreenSettings does the ScreenMount).
-## main.gd parents it under the ScreenMount, via an anchor that carries the
+## The Stage parents it under the ScreenMount, via an anchor that carries the
 ## main screen's script motion, so the layer moves with the screen and its
 ## settings offset it from there. The Screen child sits where the default
 ## main screen does, so default settings put it just in front of the video: see-through things draw
@@ -29,7 +29,7 @@ extends Node3D
 ## (at the hinted or default height) and a stereo video's output is split
 ## per eye as a flat stereo screen, so locked at size 1 it lines up with
 ## the video.
-## The AudioAnalyzer is shared, so main.gd runs it while any layer
+## The AudioAnalyzer is shared, so the Stage runs it while any layer
 ## is_running().
 ##
 ## A script's layers are the same node, spawned from prefabs/layer.tscn
