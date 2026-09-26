@@ -38,7 +38,7 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
 
 `.github/workflows/build.yml` runs on every push and pull request:
 
-1. **gde_gozen:** builds FFmpeg + gde_gozen (debug and release) for Linux x86_64, Windows x86_64, macOS arm64 + x86_64 and Android arm64 (Quest 3). The source is `GOZEN_REPO` @ `GOZEN_REF`, plus any patches in `ci/gde_gozen/patches/` (see the README there for our audio loading fix). Builds are cached per commit + patches, so only the first run pays the ~30 min FFmpeg build. The binaries are never uploaded as artifacts: the other jobs restore them from that cache.
+1. **gde_gozen:** builds FFmpeg + gde_gozen (debug and release) for Linux x86_64, Windows x86_64, macOS arm64 + x86_64 and Android arm64 (Quest 3). The source is `GOZEN_GIT_URL` @ `GOZEN_REF` (default: [Codeberg upstream](https://codeberg.org/gozen/gde_gozen)), plus any patches in `ci/gde_gozen/patches/` (see the README there for our audio loading fix). Builds are cached per commit + patches, so only the first run pays the ~30 min FFmpeg build. The binaries are never uploaded as artifacts: the other jobs restore them from that cache.
 2. **Tests:** imports the project with Godot 4.7.2, checks gde_gozen loads (`tests/check_extensions.gd`), runs `tests/run.gd`.
 3. **Export and package:** exports with `project_engine/export_presets.cfg` and uploads one artifact holding:
    - Windows: `-setup.exe` installer and a portable `.zip`

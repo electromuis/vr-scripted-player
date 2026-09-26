@@ -21,11 +21,13 @@ concurrency:
 
 env:
   GODOT_VERSION: "4.7.2"
-  # gde_gozen source. Point GOZEN_REPO at the fork that carries the audio
-  # loading fix (e.g. electromuis/gde_gozen) and GOZEN_REF at its branch, tag
-  # or commit. Patches in ci/gde_gozen/patches/ are applied on top either way.
-  GOZEN_REPO: VoylinsGamedevJourney/gde_gozen
-  GOZEN_REF: f9448619324ad7d0d4e79d3bd501bde477ea4b7f
+  # gde_gozen source: any public git URL (upstream lives on Codeberg; the
+  # GitHub copy is an older mirror). Point it at the fork that carries the
+  # audio loading fix, and GOZEN_REF at a branch, tag or commit; pin a commit
+  # for reproducible builds. Patches in ci/gde_gozen/patches/ are applied on
+  # top either way.
+  GOZEN_GIT_URL: https://codeberg.org/gozen/gde_gozen.git
+  GOZEN_REF: HEAD
 
 jobs:
   gozen-ref:
@@ -41,13 +43,13 @@ jobs:
           if [[ "$GOZEN_REF" =~ ^[0-9a-f]{40}$ ]]; then
             SHA="$GOZEN_REF"
           else
-            SHA="$(git ls-remote "https://github.com/${GOZEN_REPO}.git" "$GOZEN_REF" "refs/tags/$GOZEN_REF^{}" | tail -n1 | cut -f1)"
+            SHA="$(git ls-remote "$GOZEN_GIT_URL" "$GOZEN_REF" "refs/tags/$GOZEN_REF^{}" | tail -n1 | cut -f1)"
           fi
-          [ -n "$SHA" ] || { echo "::error::Cannot resolve $GOZEN_REF in $GOZEN_REPO"; exit 1; }
+          [ -n "$SHA" ] || { echo "::error::Cannot resolve $GOZEN_REF in $GOZEN_GIT_URL"; exit 1; }
           PATCHES="$(cat ci/gde_gozen/patches/*.patch ci/build_gozen.sh 2>/dev/null | sha256sum | cut -c1-16)"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "cache-key=${GOZEN_REPO//\//-}-$SHA-$PATCHES" >> "$GITHUB_OUTPUT"
-          echo "gde_gozen: $GOZEN_REPO @ $SHA (patches $PATCHES)"
+          echo "cache-key=$SHA-$PATCHES" >> "$GITHUB_OUTPUT"
+          echo "gde_gozen: $GOZEN_GIT_URL @ $SHA (patches $PATCHES)"
 
   gozen:
     name: gde_gozen ${{ matrix.platform }}-${{ matrix.arch }}

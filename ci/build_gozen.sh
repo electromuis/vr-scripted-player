@@ -4,20 +4,20 @@
 #
 #   ci/build_gozen.sh <linux|windows|macos|android> <x86_64|arm64>
 #
-# GOZEN_REPO and GOZEN_SHA pick the source (see .github/workflows/build.yml).
+# GOZEN_GIT_URL and GOZEN_SHA pick the source (see .github/workflows/build.yml).
 # Every ci/gde_gozen/patches/*.patch is applied on top, in name order.
 # Binaries end up in ./gozen-bin/<platform>-<arch>.
 set -euo pipefail
 
 PLATFORM="$1"
 ARCH="$2"
-: "${GOZEN_REPO:?}" "${GOZEN_SHA:?}"
+: "${GOZEN_GIT_URL:?}" "${GOZEN_SHA:?}"
 ROOT="$(pwd)"
 
 rm -rf gde_gozen
 git init -q gde_gozen
 cd gde_gozen
-git remote add origin "https://github.com/${GOZEN_REPO}.git"
+git remote add origin "$GOZEN_GIT_URL"
 git fetch -q --depth 1 origin "$GOZEN_SHA"
 git checkout -q FETCH_HEAD
 # emsdk is only for web builds.
