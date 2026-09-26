@@ -69,6 +69,13 @@ Studio is where a piece gets **staged and performed**, rather than typed. It has
 
 **Left to the desktop:** fine timing across many tracks, typing names and numbers, writing shaders. The desktop route is import → edit → export in Godot (see *Done*); it round-trips losslessly.
 
+### Target: Quest 3
+- **Runs as PC VR** over Link (cable), Air Link or Virtual Desktop. The player needs Windows, because video decoding (gde_gozen) is a Windows FFmpeg extension; a standalone Quest build would need an Android build of the decoder, which is out of scope.
+- **OpenXR runtime:** Meta's Link runtime, SteamVR, or Virtual Desktop's VDXR. All three expose the Touch controller profile the action map already has.
+- **Touch Plus controllers:** triggers, grips, sticks with click, A/B on the right, X/Y on the left, a menu button (≡) on the left only. The right-hand Meta button belongs to the system and can't be used.
+- **Display:** about 2064×2208 per eye at 90 or 120 Hz. This sets the frame budget (camera shaders especially) and the minimum text size for panels.
+- **Later options:** hand tracking over Link (pinch as trigger) and passthrough in Studio, to see your desk and keyboard, are both possible with the Meta runtime. Neither is needed for the first versions.
+
 ### Principles
 1. **Two modes, one button.** *Play* is the audience view with no UI. *Edit* shows the tools. Toggling is instant and keeps the playhead, so you can check anything straight away.
 2. **Touch it to change it.** Grab objects directly. Every property sits next to the thing it changes. No mode maps to memorise.
@@ -98,7 +105,7 @@ Studio is where a piece gets **staged and performed**, rather than typed. It has
 | Right B | Undo (hold: redo) | — |
 | Left menu | Toggle Play / Edit | Toggle Play / Edit |
 
-The mapping follows the current `xr_rig.gd` signals, so Play mode behaves exactly like today's player.
+These are the **defaults**; every binding can be changed (see *Controls and remapping*). Play mode's defaults are today's player bindings, so nothing changes for viewers who don't touch the settings.
 
 **Panels.** Each one is a `Viewport2DIn3D`, styled like the existing floating panel. All of them hide in Play mode.
 
@@ -128,6 +135,28 @@ The mapping follows the current `xr_rig.gd` signals, so Play mode behaves exactl
 - Text is at least about 1.2° of view (roughly 2 cm at 1 m), and targets are at least about 2.5 cm.
 - The pointer's hover highlights what will be hit. A short haptic tick confirms a key, a snap, a grab and a drop.
 - The selected object gets an outline plus its pivot and axes. Objects that are animated but off-key show a faint ghost at their next key.
+
+### Controls and remapping (player and Studio)
+Both apps get a **Controls** screen where every command can be rebound, for the controllers and the keyboard.
+
+![Controls screen: commands for Play mode with their bindings, one row waiting for a button press, and the two Quest 3 controllers with the bound buttons lit](docs/studio/controls.svg)
+
+- **Commands, not buttons.** Everything the apps do becomes a named command ("Play / pause", "Seek +10 s", "Key selection", "Undo", "Toggle Camera FX", …) with a context:
+  - *Play*, *Edit* (Studio) and *Menus* (while the pointer is on a panel)
+  - the same button can do different things per context, which is how Right A is play/pause in Play and "key selection" in Edit
+- **What can be bound:**
+  - any button (trigger, grip, A/B/X/Y, stick click, ≡ menu) on either hand, as **press**, **hold** (about 0.5 s) or **double press**
+  - **chords**: a held modifier plus another input, like "left trigger + left stick" for scrubbing
+  - stick **directions** as flicks (one push = one step, as seek and volume work now) or as a continuous **axis** (movement, turning, scrubbing)
+- **Rebinding.** Pick a command, then press the button you want ("Press a button…", with B to keep the old binding and a timeout). Conflicts within a context are shown and must be resolved. Pointing at a button on the controller picture shows what it does.
+- **Profiles:** *Default*, *Left-handed* (mirrored) and your own saved sets. Reset to defaults is always one press away.
+- **Keyboard** uses the same commands, so the desktop shortcuts (Space, ←/→, F1, F2, H, F11, R) become rebindable too.
+- **Storage:** `user://input_bindings.json` with a version number, shared by the player and Studio; each app only shows its own contexts. Unknown commands in the file (for example from a newer version) are kept, not dropped.
+- **How it's built:**
+  - The OpenXR action map stays generic (raw trigger, grip, buttons, sticks per hand), since the Meta runtime has no binding UI of its own.
+  - A new input router reads those raw actions, detects press / hold / double / chord / flick, and emits commands from the active context's bindings.
+  - The hard-coded button checks in `xr_rig.gd` (`_on_button_pressed`) and the stick handling in `xr_movement.gd` become command handlers. Locked mode's "stick = media remote" becomes simply the default Play bindings.
+  - Binding resolution, gesture detection (on recorded input sequences), conflict checks and profile loading are pure logic with headless tests.
 
 ### Moving things around
 - **Direct grab.** The grip takes whatever is in your hand or under the ray, with the grab offset kept, so it doesn't jump. Picking needs colliders: Studio adds a pick box around each spawned object's visual bounds, only in Studio (never in the player).
@@ -295,11 +324,12 @@ Each ends in something usable, with a clear "done when".
 | M7 | **Motion paths + viewer animation + miniature view**: format v3 viewer track, key viewer here, ride recording, comfort warnings, "cuts only" setting | Record a ride through the tunnel, preview it from the seat, and it plays back smooth in the player (and as fades with "cuts only") |
 | M8 | **Polish**: haptics, comfort, visual pass, left-handed mode, looks/presets | A first-time user can place, key and play back a screen in 10 minutes unaided |
 
+| IN | **Controls and remapping** in the *player*: commands, input router, Controls tab, profiles, keyboard; `xr_rig` / `xr_movement` moved onto it | Rebind play/pause to X on a Quest 3, the default profile still behaves exactly as today, and all binding tests pass. Studio adds its Edit context from M2 on |
 | FX | **Camera shaders** in the *player* (not Studio): camera quad + prelude + built-ins, Camera FX in the Camera tab and presets, format `camera` block, user limits | A kaleidoscope reacts to the bass on a plain video in the headset, the same in both eyes; strength keys in a script fade it in and out |
 
 M1–M3 are the smallest thing that's already better than the desktop for layout. M6 is the feature that makes Studio worth opening.
 
-**FX doesn't depend on Studio** and can be built any time, even before M0: it's a player feature, testable on the desktop first. Its first step is a headset check that `hint_screen_texture` works per eye with the quad approach.
+**IN and FX don't depend on Studio**; IN should land before M2, since Studio's controls build on it. FX can be built any time, even before M0: it's a player feature, testable on the desktop first. Its first step is a headset check that `hint_screen_texture` works per eye with the quad approach.
 
 ### Prerequisites and risks
 - **Phase 4b headset checklist:** the wrist HUD, and pointer clicks in every menu tab, aren't recorded as confirmed. Make pointer UI solid before M2.
@@ -312,7 +342,6 @@ M1–M3 are the smallest thing that's already better than the desktop for layout
 - **Camera shaders in VR:** reading the screen texture in multiview (two-eye) rendering has to be confirmed on the target headset and renderer before building on it; the `CompositorEffect` fallback costs more. Full-view effects also cost GPU time at headset resolution and refresh rate, so each built-in needs a frame-time budget check.
 
 ### Open questions
-- **Target headsets and runtime:** Quest over Link/Air Link via SteamVR/OpenXR, or Index/others? This decides the button labels and whether hand tracking is worth adding.
 - **Where shared assets live:** one library folder per user, or per project?
 - **Should Studio also open plain videos**, to start a new piece from a video file (create `clip.json` next to it)? I'd say yes. It's the natural "new piece" flow.
 
