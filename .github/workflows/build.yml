@@ -1,0 +1,402 @@
+name: Build
+
+# Every push and PR: build gde_gozen, run the tests, export and package all
+# platforms, upload the packages as a workflow artifact.
+# The gde_gozen binaries are never uploaded on their own: jobs hand them to each
+# other through the Actions cache, which can't be downloaded from the run page
+# the way artifacts can, and Windows / Linux builds pack them into the .pck.
+# A pushed tag (v1.2.3): the same, plus a GitHub release with the packages and
+# the commit messages since the previous tag.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+  # Caches are per branch, but every branch can read master's. This keeps
+  # master's gde_gozen caches from expiring (GitHub drops caches unused for
+  # 7 days) so new branches start with a cache hit. Scheduled runs only
+  # restore/rebuild gde_gozen; they don't test, export or package.
+  schedule:
+    - cron: "23 4 * * 1"
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  GODOT_VERSION: "4.7.2"
+  # gde_gozen source: any public git URL (upstream lives on Codeberg; the
+  # GitHub copy is an older mirror). Point it at the fork that carries the
+  # audio loading fix, and GOZEN_REF at a branch, tag or commit; pin a commit
+  # for reproducible builds. Patches in ci/gde_gozen/patches/ are applied on
+  # top either way.
+  GOZEN_GIT_URL: https://codeberg.org/gozen/gde_gozen.git
+  GOZEN_REF: HEAD
+
+jobs:
+  gozen-ref:
+    name: Resolve gde_gozen commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      cache-key: ${{ steps.resolve.outputs.cache-key }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: resolve
+        run: |
+          if [[ "$GOZEN_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            SHA="$GOZEN_REF"
+          else
+            SHA="$(git ls-remote "$GOZEN_GIT_URL" "$GOZEN_REF" "refs/tags/$GOZEN_REF^{}" | tail -n1 | cut -f1)"
+          fi
+          [ -n "$SHA" ] || { echo "::error::Cannot resolve $GOZEN_REF in $GOZEN_GIT_URL"; exit 1; }
+          PATCHES="$(cat ci/gde_gozen/patches/*.patch ci/build_gozen.sh 2>/dev/null | sha256sum | cut -c1-16)"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "cache-key=$SHA-$PATCHES" >> "$GITHUB_OUTPUT"
+          echo "gde_gozen: $GOZEN_GIT_URL @ $SHA (patches $PATCHES)"
+
+  gozen:
+    name: gde_gozen ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: gozen-ref
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
+          - { platform: windows, arch: x86_64, os: ubuntu-latest, container: "archlinux:latest" }
+          - { platform: macos, arch: arm64, os: macos-latest }
+          - { platform: macos, arch: x86_64, os: macos-15-intel }
+          - { platform: android, arch: arm64, os: ubuntu-latest, container: "archlinux:latest" }
+    env:
+      GOZEN_SHA: ${{ needs.gozen-ref.outputs.sha }}
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      ANDROID_HOME: /opt/android-sdk
+      NDK_VERSION: "23.2.8568313"
+    steps:
+      - name: Install base packages (container)
+        if: matrix.container
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm git sudo bash yasm python scons gcc diffutils make wget tar unzip cmake pkgconf zstd
+          if [ "${{ matrix.platform }}" = windows ]; then pacman -S --noconfirm mingw-w64 ninja; fi
+          if [ "${{ matrix.platform }}" = android ]; then pacman -S --noconfirm jdk17-openjdk libtool; fi
+
+      - uses: actions/checkout@v4
+
+      # Also how the test and package jobs get the binaries (restored by key).
+      - name: Restore cached build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: gozen-bin/${{ matrix.platform }}-${{ matrix.arch }}
+          key: gozen-${{ matrix.platform }}-${{ matrix.arch }}-${{ needs.gozen-ref.outputs.cache-key }}
+
+      - name: Install packages (Linux)
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yasm nasm scons cmake build-essential diffutils pkg-config zlib1g-dev libbz2-dev liblzma-dev libvpx-dev
+
+      - name: Install packages (macOS)
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.platform == 'macos'
+        run: brew install yasm nasm scons make libvpx cmake pkg-config
+
+      - name: Install Android SDK/NDK
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.platform == 'android'
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
+        run: |
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/clt.zip
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          unzip -q /tmp/clt.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
+          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" "platforms;android-34" > /dev/null
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      # A new gde_gozen commit (e.g. a push to the fork) misses the cache above,
+      # but its FFmpeg is usually unchanged: that's cached on its own, keyed on
+      # the dependency commits, and SCons caches godot-cpp's and the
+      # extension's objects, so only what changed gets recompiled.
+      - name: Check out gde_gozen
+        id: src
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git config --global --add safe.directory '*'
+          ci/build_gozen.sh checkout
+          echo "deps-key=$(ci/build_gozen.sh deps-key ${{ matrix.platform }} ${{ matrix.arch }})" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached FFmpeg
+        id: ffmpeg-cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: gde_gozen/ffmpeg/bin
+          key: ffmpeg-${{ matrix.platform }}-${{ matrix.arch }}-${{ steps.src.outputs.deps-key }}
+
+      - name: Build FFmpeg
+        if: steps.cache.outputs.cache-hit != 'true' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        env:
+          JAVA_HOME: ${{ matrix.platform == 'android' && '/usr/lib/jvm/java-17-openjdk' || '' }}
+        run: ci/build_gozen.sh ffmpeg ${{ matrix.platform }} ${{ matrix.arch }}
+
+      # Saved right away, so a failure in a later step doesn't throw it away.
+      - name: Save FFmpeg
+        if: steps.cache.outputs.cache-hit != 'true' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: gde_gozen/ffmpeg/bin
+          key: ffmpeg-${{ matrix.platform }}-${{ matrix.arch }}-${{ steps.src.outputs.deps-key }}
+
+      - name: Restore SCons cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: scons-cache
+          key: scons-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: scons-${{ matrix.platform }}-${{ matrix.arch }}-
+
+      - name: Build gde_gozen
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          JAVA_HOME: ${{ matrix.platform == 'android' && '/usr/lib/jvm/java-17-openjdk' || '' }}
+        run: |
+          # $PWD, not github.workspace: that's the host path in container jobs.
+          SCONS_CACHE_DIR="$PWD/scons-cache" ci/build_gozen.sh extension ${{ matrix.platform }} ${{ matrix.arch }}
+          # Old objects pile up in the SCons cache; start over once it's big.
+          if [ "$(du -sm scons-cache | cut -f1)" -gt 1500 ]; then rm -rf scons-cache; fi
+
+  test:
+    name: Tests
+    if: github.event_name != 'schedule'
+    needs: [gozen-ref, gozen]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/linux-x86_64
+          key: gozen-linux-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - name: Set up Godot and addons
+        run: |
+          mkdir -p project_engine/addons/gde_gozen/bin
+          cp gozen-bin/*/* project_engine/addons/gde_gozen/bin/
+          ci/setup_godot.sh
+          ci/fetch_addons.sh
+      - name: Import project
+        run: ~/godot/godot --headless --path project_engine --import
+      - name: gde_gozen loads (GoZenVideo, AudioStreamFFmpeg)
+        run: ~/godot/godot --headless --path project_engine --script res://tests/check_extensions.gd
+      - name: Unit tests
+        run: ~/godot/godot --headless --path project_engine --script res://tests/run.gd
+
+  package:
+    name: Export and package
+    if: github.event_name != 'schedule'
+    needs: [gozen-ref, gozen]
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            # Windows and macOS only take digits and dots (1.2.0-beta -> 1.2.0).
+            sed -i "s|^config/version=.*|config/version=\"${VERSION%%[-+]*}\"|" project_engine/project.godot
+          else
+            BASE="$(grep -Po '^config/version="\K[^"]+' project_engine/project.godot)"
+            VERSION="${BASE%-dev}-dev.${GITHUB_SHA::7}"  # 0.1.0-dev -> 0.1.0-dev.abc1234
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+          # Android wants a numeric, increasing versionCode and a plain versionName.
+          sed -i "/^\[preset.3.options\]/a version/code=${GITHUB_RUN_NUMBER}\nversion/name=\"$VERSION\"" project_engine/export_presets.cfg
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/linux-x86_64
+          key: gozen-linux-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/windows-x86_64
+          key: gozen-windows-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/macos-arm64
+          key: gozen-macos-arm64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/macos-x86_64
+          key: gozen-macos-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/android-arm64
+          key: gozen-android-arm64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - name: Collect gde_gozen binaries
+        run: |
+          mkdir -p project_engine/addons/gde_gozen/bin
+          cp gozen-bin/*/* project_engine/addons/gde_gozen/bin/
+          rm -rf gozen-bin
+
+      - name: Restore Godot export templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-templates-${{ env.GODOT_VERSION }}-v1
+
+      - name: Set up Godot, templates and addons
+        run: |
+          ci/setup_godot.sh --templates
+          ci/fetch_addons.sh
+          sudo apt-get update && sudo apt-get install -y nsis
+          ls -la project_engine/addons/gde_gozen/bin
+
+      - name: Import project
+        run: ~/godot/godot --headless --path project_engine --import
+
+      - name: Export desktop builds
+        run: |
+          export_one() {  # preset, output file
+            mkdir -p "$(dirname "$2")"
+            ~/godot/godot --headless --path project_engine --export-release "$1" "$2"
+            [ -f "$2" ] || { echo "::error::$1 export produced no $2"; exit 1; }
+          }
+          export_one "Windows Desktop" "$PWD/build/windows/ShaderPlayerVR.exe"
+          export_one "Linux" "$PWD/build/linux/ShaderPlayerVR.x86_64"
+          export_one "macOS" "$PWD/build/macos/ShaderPlayerVR.zip"
+          ls -laR build
+          # gde_gozen is packed into the .pck on Windows / Linux, never shipped loose.
+          if [ -n "$(find build/windows build/linux -iname '*gozen*')" ]; then
+            echo "::error::gde_gozen library exported next to the executable"; exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Export Quest 3 build
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEYSTORE_USER }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          # Signing key: the repo's secrets if set, else a throwaway one (the APK
+          # then won't install over one signed with a different key).
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          else
+            echo "::warning::ANDROID_KEYSTORE_* secrets not set; signing the Quest APK with a throwaway key."
+            export GODOT_ANDROID_KEYSTORE_RELEASE_USER=ci GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=ci-password
+            keytool -genkeypair -keystore "$RUNNER_TEMP/release.keystore" -alias ci -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass ci-password -keypass ci-password -dname "CN=Shader Player VR CI" -noprompt
+          fi
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/release.keystore"
+
+          ci/fetch_addons.sh --android
+          ~/godot/godot --headless --path project_engine --import
+          mkdir -p build/quest
+          ~/godot/godot --headless --path project_engine --install-android-build-template \
+            --export-release "Quest 3" "$PWD/build/quest/ShaderPlayerVR.apk"
+          [ -f build/quest/ShaderPlayerVR.apk ] || { echo "::error::Quest 3 export produced no APK"; exit 1; }
+
+      - name: Package
+        run: ci/package.sh "${{ steps.version.outputs.version }}"
+
+      # One artifact per package, uploaded as the file itself (not zipped).
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-windows-x86_64-setup.exe
+          archive: false
+          if-no-files-found: error
+      - name: Upload Windows portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-windows-x86_64-portable.zip
+          archive: false
+          if-no-files-found: error
+      - name: Upload Linux .deb
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-linux-x86_64.deb
+          archive: false
+          if-no-files-found: error
+      - name: Upload Linux portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-linux-x86_64-portable.tar.gz
+          archive: false
+          if-no-files-found: error
+      - name: Upload macOS
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-macos-universal.zip
+          archive: false
+          if-no-files-found: error
+      - name: Upload Quest 3
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-quest3.apk
+          archive: false
+          if-no-files-found: error
+      - name: Upload All platforms portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-portable-all-platforms.zip
+          archive: false
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Release notes from commits since the previous tag
+        run: |
+          git fetch --force --tags origin
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          RANGE="${PREV:+$PREV..}$GITHUB_REF_NAME"
+          {
+            if [ -n "$PREV" ]; then echo "## Changes since $PREV"; else echo "## Changes"; fi
+            echo
+            git log --no-merges --pretty=format:'- %s (%h)%n%w(0,2,2)%b' "$RANGE" | sed '/^\s*$/d'
+          } > release_notes.md
+          cat release_notes.md
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ShaderPlayerVR-${{ needs.package.outputs.version }}-*
+          path: dist
+          merge-multiple: true
+
+      - run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Shader Player VR ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}

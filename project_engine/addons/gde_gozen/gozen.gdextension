@@ -11,9 +11,7 @@ linux.debug.arm64 = "res://addons/gde_gozen/bin/libgozen.linux.template_debug.ar
 linux.release.arm64 = "res://addons/gde_gozen/bin/libgozen.linux.template_release.arm64.so"
 
 windows.debug.x86_64 = "res://addons/gde_gozen/bin/libgozen.windows.template_debug.x86_64.dll"
-; Point release at the debug DLL — only the debug binary ships in the alpha download.
-; Fix locally so exports don't break; upstream when a release binary appears.
-windows.release.x86_64 = "res://addons/gde_gozen/bin/libgozen.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/gde_gozen/bin/libgozen.windows.template_release.x86_64.dll"
 windows.debug.arm64 = "res://addons/gde_gozen/bin/libgozen.windows.template_debug.arm64.dll"
 windows.release.arm64 = "res://addons/gde_gozen/bin/libgozen.windows.template_release.arm64.dll"
 
