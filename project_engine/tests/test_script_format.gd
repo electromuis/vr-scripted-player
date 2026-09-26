@@ -147,8 +147,8 @@ static func test_forest_tunnel_prefabs_load(tc: TestCase) -> void:
 
 
 static func test_forest_tunnel_scene_states(tc: TestCase) -> void:
-	# Environment swap at 45 s, screen split at 55 s, merge at 160 s, back to
-	# the forest at 175 s.
+	# Environment swap at 45 s, screen split at 55 s, merge at 160 s, the
+	# tunnel gone at 156.9 s and the forest back at 160.2 s.
 	var r := ScriptFormat.load_from_file(_example("forest_tunnel/video.json"))
 	tc.assert_ok(r)
 	if not r.ok:
@@ -158,15 +158,16 @@ static func test_forest_tunnel_scene_states(tc: TestCase) -> void:
 		var ids := ScriptRunner._project_state_at(events, t).keys()
 		ids.sort()
 		return ids
-	# `backdrop` lives inside main_screen and goes with it; the columns and
-	# `rings` live inside the `screens` group, which stays (empty) throughout.
-	tc.assert_eq(ids_at.call(10.0), ["backdrop", "forest", "main_screen", "screens"])
-	tc.assert_eq(ids_at.call(50.0), ["backdrop", "main_screen", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(57.0), ["screen_center", "screen_left", "screen_right", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(60.0), ["rings", "screen_center", "screen_left", "screen_right", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(155.0), ["screen_center", "screen_left", "screen_right", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(165.0), ["backdrop", "main_screen", "screens", "tunnel"])
-	tc.assert_eq(ids_at.call(180.0), ["backdrop", "forest", "main_screen", "screens"])
+	# Everything screen-related sits in the `screen_master` group, which stays
+	# throughout. `backdrop` lives inside main_screen and goes with it; the
+	# columns and `rings` live inside the `screens` group, which stays (empty).
+	tc.assert_eq(ids_at.call(10.0), ["backdrop", "forest", "main_screen", "screen_master", "screens"])
+	tc.assert_eq(ids_at.call(50.0), ["backdrop", "main_screen", "screen_master", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(57.0), ["screen_center", "screen_left", "screen_master", "screen_right", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(60.0), ["rings", "screen_center", "screen_left", "screen_master", "screen_right", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(155.0), ["screen_center", "screen_left", "screen_master", "screen_right", "screens", "tunnel"])
+	tc.assert_eq(ids_at.call(165.0), ["backdrop", "forest", "main_screen", "screen_master", "screens"])
+	tc.assert_eq(ids_at.call(180.0), ["backdrop", "forest", "main_screen", "screen_master", "screens"])
 
 
 static func test_timeline_helpers(tc: TestCase) -> void:

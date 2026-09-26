@@ -62,7 +62,7 @@ It mixes two jobs:
 - **Core (Studio needs it):** video bridge, script runner hookup, screen settings / `_apply_screen_settings`, layers (`_rebuild_layers`, `_place_layer`, `_update_layer_anchor`), curvature, projection, XR rig, camera cuts.
 - **Shell (player only):** file open and drop, DLNA, playlist, Whirligig, presets UI, media keys, thumbstick seek and volume, menus.
 
-Move the core into `player/stage/` (a scene plus script), with no change in behaviour. `main.tscn` becomes stage + shell. Check with the 137-test suite, then **on a headset**, because the headless tests can't cover VR.
+Move the core into `player/stage/` (a scene plus script), with no change in behaviour. `main.tscn` becomes stage + shell. Check with the player's test suite (all 137 pass), then **on a headset**, because the headless tests can't cover VR.
 
 ### 3b. Studio skeleton
 `project_engine/studio/studio.tscn` = stage + XR rig + studio tools. It opens a script JSON (command-line argument), and writes the JSON back on save (the player's file watcher / reconcile already handles reloading).
@@ -83,9 +83,9 @@ Make screens and layers `XRToolsPickable`. On release, write a transform keyfram
 - **Seeking back past a cut:** the player doesn't restore the camera when seeking back past a `vr_cut` or the t=0 start-pose cut. That will matter for editing.
 - **`_read_transform` in `script_runner.gd`:** it builds `Basis.from_euler(rot).scaled(scl)`. `scaled` applies scale on global axes, while Godot nodes (and the importer) use rotation × local scale. With non-uniform scale plus rotation the player may not match the editor. Verify before Studio writes transforms.
 
-## Known issues (not caused by this work)
-- `test_addon_shaders_match_player` fails: the addon's `rounded_corners.gdshader` copy differs from the player's.
-- `test_forest_tunnel_scene_states` fails: the committed `scripts/forest_tunnel/video.json` export is stale (the scene now has a `screen_master` group). Re-export from the editor, which also gives it the exact bezier curves. It's still a v1 file.
+## Known issues
+- All 137 player tests pass, as does the round-trip test.
+- `scripts/forest_tunnel/video.json` is still a v1 export (bezier tracks baked to linear keys, within 0.001 of the curves). Its events match the current scene; re-export from the editor for the exact curves and format v2.
 - `scripts/minimal` has no objects, so the exporter refuses it (by design). The round-trip test skips it.
 
 ## Working in the cloud container

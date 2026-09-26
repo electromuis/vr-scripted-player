@@ -9,9 +9,9 @@
 shader_type canvas_item;
 #include "res://addons/vj_editor/visualizer/effect_prelude.gdshaderinc"
 
-uniform float radius_x : hint_range(0.0, 1.0, 0.005) = 0.1;
-uniform float radius_y : hint_range(0.0, 0.5, 0.005) = 0.1;
-uniform float feather : hint_range(0.0, 0.1, 0.001) = 0.003;
+uniform float radius_x : hint_range(0.0, 2.0, 0.005) = 0.1;
+uniform float radius_y : hint_range(0.0, 2.0, 0.005) = 0.1;
+uniform float feather : hint_range(0.0, 0.3, 0.001) = 0.003;
 
 void fragment() {
 	vec4 c = texture(input_tex, UV);
