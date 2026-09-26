@@ -8,9 +8,10 @@ extends Camera3D
 ## — with a fade, the event starts `fade_duration / 2` earlier so the screen
 ## is fully black exactly when the view jumps.
 ##
-## Its rest pose should match the player's home pose (0, 2, 8) looking
-## down -Z, since the player starts every script there. Use this camera's
-## "Preview" toggle in the 3D editor to see what the viewer sees.
+## The player starts every script at its home pose (0, 2, 8) looking down
+## -Z; a start pose (rest pose, or a key at t=0) anywhere else exports as a
+## hard cut at t=0. Use this camera's "Preview" toggle in the 3D editor to
+## see what the viewer sees.
 
 ## Transition on each cut: "fade_to_black" or "none" (a hard cut).
 @export_enum("fade_to_black", "none") var transition: String = "fade_to_black"

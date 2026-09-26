@@ -225,3 +225,32 @@ static func test_validation_of_parent_and_config(tc: TestCase) -> void:
 			"config": {"effects": [{"params": {}}]}}]
 	tc.assert_false(ScriptFormat.load_from_string(JSON.stringify(bad_effects)).ok)
 
+
+
+## A switched-off effect stays in the file for editors but never runs, and
+## doesn't count towards effect<N>: the next one is effect0's neighbour.
+static func test_disabled_effects_are_skipped(tc: TestCase) -> void:
+	var pair := _make_runner()
+	var runner: ScriptRunner = pair[0]
+	var stage: Node3D = pair[1]
+	var ev := _spawn(0.0, "screen", "", {"prefab": "conf", "config": {"effects": [
+		{"shader": "mask", "enabled": false},
+		{"shader": "blur"},
+	]}})
+	runner.load_timeline(_timeline([ev], {
+		"mask": "res://player/visualizer/effects/oval_mask.gdshader",
+		"blur": "res://player/visualizer/effects/edge_blur.gdshader",
+	}))
+	runner.tick(0.0)
+	var cfg: Dictionary = runner.registry().get_node_by_id("screen").got_cfg
+	tc.assert_eq(cfg.effects.size(), 1)
+	tc.assert_eq(cfg.effects[0].shader, "res://player/visualizer/effects/edge_blur.gdshader")
+	stage.free()
+
+
+static func test_effect_enabled_must_be_bool(tc: TestCase) -> void:
+	var s := {"format_version": 2, "media": {"video": "v.mp4"}, "tracks": [{"type": "event", "t": 0, "action": "spawn",
+			"id": "a", "prefab": "p", "config": {"effects": [{"shader": "k", "enabled": "no"}]}}]}
+	tc.assert_err(ScriptFormat.load_from_string(JSON.stringify(s)), "enabled")
+	s.tracks[0].config.effects[0].enabled = false
+	tc.assert_ok(ScriptFormat.load_from_string(JSON.stringify(s)))

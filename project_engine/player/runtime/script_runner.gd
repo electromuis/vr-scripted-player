@@ -441,8 +441,8 @@ func _resolve_config(cfg: Dictionary, is_layer: bool) -> Dictionary:
 	if typeof(effects) == TYPE_ARRAY:
 		var list: Array = []
 		for e in effects:
-			if typeof(e) != TYPE_DICTIONARY:
-				continue
+			if typeof(e) != TYPE_DICTIONARY or e.get("enabled", true) == false:
+				continue  # switched off: kept for editors, skipped (and not counted in effect<N>)
 			var params = e.get("params", {})
 			list.append({
 				"shader": _shader_path(String(e.get("shader", ""))),

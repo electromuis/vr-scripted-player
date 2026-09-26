@@ -3,6 +3,8 @@ extends EditorPlugin
 
 ## Tools menu:
 ##   VJ: Export current scene to script.json…  — write the JSON
+##   VJ: Import script.json…                   — build the scene from a script, in
+##                                               an empty project only (importer/)
 ##   VJ: Preview in player                     — export, then run the player on it
 ##   VJ: Make VJ object                        — attach vj_object.gd to the selection
 ##                                               (also in the Scene dock's right-click menu)
@@ -27,6 +29,7 @@ extends EditorPlugin
 ## at the scrub time instead of starting another player.
 
 const _MENU_EXPORT := "VJ: Export current scene to script.json…"
+const _MENU_IMPORT := "VJ: Import script.json…"
 const _MENU_PREVIEW := "VJ: Preview in player"
 const _MENU_MAKE_OBJECT := "VJ: Make VJ object"
 const _MENU_TO_BEZIER := "VJ: Convert value tracks to Bezier"
@@ -38,6 +41,7 @@ const _SETTING_VR := "vj_editor/player/start_in_vr"
 const _DEFAULT_ENGINE := "res://../project_engine"
 
 const SceneExporterScript := preload("res://addons/vj_editor/exporter/scene_exporter.gd")
+const ScriptImporterScript := preload("res://addons/vj_editor/importer/script_importer.gd")
 const LiveSyncScript := preload("res://addons/vj_editor/live_sync/live_sync.gd")
 const BezierTracksScript := preload("res://addons/vj_editor/exporter/bezier_tracks.gd")
 const MakeVJObjectScript := preload("res://addons/vj_editor/modifiers/make_vj_object.gd")
@@ -53,6 +57,7 @@ var _effect_tools: EditorContextMenuPlugin
 
 func _enter_tree() -> void:
 	add_tool_menu_item(_MENU_EXPORT, _on_export_pressed)
+	add_tool_menu_item(_MENU_IMPORT, _on_import_pressed)
 	add_tool_menu_item(_MENU_PREVIEW, _on_preview_pressed)
 	_make_object = MakeVJObjectScript.new()
 	_make_object.undo_redo = get_undo_redo()
@@ -88,6 +93,7 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	remove_tool_menu_item(_MENU_EXPORT)
+	remove_tool_menu_item(_MENU_IMPORT)
 	remove_tool_menu_item(_MENU_PREVIEW)
 	remove_tool_menu_item(_MENU_MAKE_OBJECT)
 	remove_tool_menu_item(_MENU_TO_BEZIER)
@@ -117,6 +123,32 @@ func _on_export_pressed() -> void:
 		push_warning("VJ export: no scene open.")
 		return
 	SceneExporterScript.export_from_root(root)
+
+
+## Picks a script JSON and builds res://main.tscn from it. The importer
+## refuses a project that already has scenes, so nothing gets merged.
+func _on_import_pressed() -> void:
+	var dialog := EditorFileDialog.new()
+	dialog.title = "Import a VJ script into this empty project"
+	dialog.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
+	dialog.access = EditorFileDialog.ACCESS_FILESYSTEM
+	dialog.add_filter("*.json", "VJ script")
+	dialog.file_selected.connect(func(path: String):
+		dialog.queue_free()
+		_import(path))
+	dialog.canceled.connect(dialog.queue_free)
+	EditorInterface.get_base_control().add_child(dialog)
+	dialog.popup_file_dialog()
+
+
+func _import(json_path: String) -> void:
+	var result := ScriptImporterScript.import_into_project(json_path)
+	if not result.ok:
+		return  # the importer reported why
+	EditorInterface.get_resource_filesystem().scan()
+	EditorInterface.open_scene_from_path(result.scene_path)
+	print("VJ import: built %s from %s (%d warning(s) above). Exporting writes back to it." % [
+			result.scene_path, json_path, result.warnings.size()])
 
 
 ## Swaps each animation for a converted copy, so undo swaps the original back.

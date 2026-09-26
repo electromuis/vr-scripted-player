@@ -1,0 +1,87 @@
+{
+  "format_version": 2,
+  "meta": { "title": "Round-trip fixture", "author": "tests", "created": "2026-09-26" },
+  "media": { "video": "video.mp4", "duration": 20.0 },
+  "prefabs": {
+    "group": "res://player/prefabs/group.tscn",
+    "screen": "res://player/prefabs/screen.tscn",
+    "cube": "res://player/prefabs/cube.tscn"
+  },
+  "shaders": {
+    "wobble": "shaders/wobble.gdshader",
+    "glow": "res://player/visualizer/effects/glow.gdshader",
+    "oval_mask": "res://player/visualizer/effects/oval_mask.gdshader"
+  },
+  "objects": [],
+  "tracks": [
+    { "type": "event", "t": 0, "action": "vr_cut", "to": { "position": [1, 2, 6], "rotation_deg": [0, 20, 0] } },
+    { "type": "event", "t": 0, "action": "spawn", "id": "rig", "prefab": "group",
+      "transform": { "position": [0, 1, 0], "rotation_deg": [0, 0, 0], "scale": [1, 1, 1] },
+      "config": { "modifiers": { "tint": [1, 0.5, 0.5, 1] }, "reactive": { "spin": [0, 10, 0] } } },
+    { "type": "event", "t": 0, "action": "spawn", "id": "main", "prefab": "screen", "parent": "rig",
+      "transform": { "position": [0, 0, -2], "rotation_deg": [0, 15, 0], "scale": [0.5, 0.5, 0.5] },
+      "config": {
+        "shader": "wobble", "shader_params": { "amount": 0.3, "color": [1, 0.25, 0] },
+        "render_scale": 0.5, "curvature": 0.2,
+        "effects": [
+          { "shader": "glow", "params": { "intensity": 2.0, "tint": [1, 1, 0] } },
+          { "shader": "oval_mask", "enabled": false },
+          { "shader": "glow", "params": { "intensity": 1.0 } }
+        ] } },
+    { "type": "event", "t": 2, "action": "spawn", "id": "box", "prefab": "cube",
+      "transform": { "position": [2, 1, -3], "rotation_deg": [0, 0, 0], "scale": [0.5, 0.5, 0.5] } },
+    { "type": "event", "t": 5.5, "action": "vr_cut", "to": { "position": [0, 2, 8], "rotation_deg": [0, 0, 0] },
+      "transition": { "type": "fade_to_black", "duration": 1.0 } },
+    { "type": "event", "t": 7, "action": "vr_teleport", "to": { "position": [0, 2, 4], "rotation_deg": [0, 0, 0] } },
+    { "type": "event", "t": 8, "action": "despawn", "target": "box" },
+    { "type": "event", "t": 10, "action": "despawn", "target": "rig" },
+    { "type": "event", "t": 12, "action": "spawn", "id": "rig", "prefab": "group",
+      "transform": { "position": [0, 1, 0], "rotation_deg": [0, 0, 0], "scale": [1, 1, 1] },
+      "config": { "modifiers": { "tint": [1, 0.5, 0.5, 1] }, "reactive": { "spin": [0, 10, 0] } } },
+    { "type": "event", "t": 12, "action": "spawn", "id": "main", "prefab": "screen", "parent": "rig",
+      "transform": { "position": [0, 0, -2], "rotation_deg": [0, 15, 0], "scale": [0.5, 0.5, 0.5] },
+      "config": {
+        "shader": "wobble", "shader_params": { "amount": 0.3, "color": [1, 0.25, 0] },
+        "render_scale": 0.5, "curvature": 0.2,
+        "effects": [
+          { "shader": "glow", "params": { "intensity": 2.0, "tint": [1, 1, 0] } },
+          { "shader": "oval_mask", "enabled": false },
+          { "shader": "glow", "params": { "intensity": 1.0 } }
+        ] } },
+
+    { "type": "transform", "target": "main", "channel": "position", "keyframes": [
+      { "t": 0, "value": [0, 0, -2], "interp": "ease" },
+      { "t": 3, "value": [1, 0.5, -2.5], "interp": "ease" },
+      { "t": 7, "value": [-1, 0, -2] } ] },
+    { "type": "transform", "target": "box", "channel": "rotation_deg", "keyframes": [
+      { "t": 2, "value": [0, 0, 0], "interp": "cubic" },
+      { "t": 3, "value": [0, 90, 10], "interp": "cubic" },
+      { "t": 5.5, "value": [30, 180, 0], "interp": "cubic" },
+      { "t": 7.25, "value": [0, 270, -10], "interp": "cubic" } ] },
+    { "type": "transform", "target": "rig", "channel": "position", "keyframes": [
+      { "t": 0, "value": [0, 1, 0] },
+      { "t": 2, "value": [0, 1.5, 0], "interp": "bezier",
+        "out": [[0.5, 0], [0.4, 1.0], [0.5, 0]] },
+      { "t": 4, "value": [1, 1, 0], "in": [[-0.3, 0], [-0.6, 0.5], [-0.5, 0]], "interp": "ease" },
+      { "t": 6, "value": [0, 1, 1], "interp": "cubic" },
+      { "t": 9, "value": [0, 1, 0] } ] },
+    { "type": "shader_param", "target": "main.surface", "param": "amount", "keyframes": [
+      { "t": 0, "value": 0.3, "interp": "step" },
+      { "t": 4, "value": 0.8, "interp": "step" },
+      { "t": 6, "value": 0.1 } ] },
+    { "type": "shader_param", "target": "main.effect1", "param": "intensity", "keyframes": [
+      { "t": 0, "value": 1.0, "interp": "step" },
+      { "t": 3.02, "value": 2.5 },
+      { "t": 5.02, "value": 0.5 } ] },
+    { "type": "shader_param", "target": "main.display", "param": "curvature", "keyframes": [
+      { "t": 0, "value": 0.2, "interp": "bezier", "out": [1.0, 0.4] },
+      { "t": 4, "value": 0.5, "in": [-1.5, 0.0] } ] },
+    { "type": "shader_param", "target": "rig.modifiers", "param": "tint", "keyframes": [
+      { "t": 1, "value": [1, 0.5, 0.5, 1] },
+      { "t": 3, "value": [0.5, 1, 0.5, 0.8] } ] },
+    { "type": "shader_param", "target": "main.effect0", "param": "tint", "keyframes": [
+      { "t": 0, "value": [1, 1, 0], "interp": "cubic" },
+      { "t": 2, "value": [0, 1, 1], "interp": "cubic" },
+      { "t": 5, "value": [1, 0, 1], "interp": "cubic" } ] }
+  ]
+}

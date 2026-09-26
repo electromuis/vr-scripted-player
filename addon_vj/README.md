@@ -4,10 +4,14 @@ Author VJ scripts natively in Godot: place prefab instances in a scene, drive
 them with an `AnimationPlayer`, and export the whole thing to the JSON format
 the player runtime consumes.
 
+The script JSON is the master copy of a piece. A scene is a way to edit it:
+**Tools > VJ: Import script.json…** builds one from a JSON in an empty
+project, and its export writes back to that JSON (see *Import* below).
+
 ## Layout
 
 - `plugin.gd` / `plugin.cfg` — `EditorPlugin`: **Tools > VJ: Export…**,
-  **Tools > VJ: Preview in player**, and a **▶ Preview in player** button in
+  **Tools > VJ: Import script.json…**, **Tools > VJ: Preview in player**, and a **▶ Preview in player** button in
   the 3D editor toolbar
 - `preview/desktop_preview.gd` — runtime-only desktop preview (fly camera, media bar, video)
 - `builtin_prefabs/` — self-contained prefabs the artist drops into a scene
@@ -37,6 +41,10 @@ the player runtime consumes.
   include paths; `project_engine/tests/test_addon_shader_copies.gd` checks
 - `exporter/scene_exporter.gd` — walks a scene + its `AnimationPlayer`, produces
   the JSON dict, writes it to the configured output path
+- `importer/script_importer.gd` — the reverse: builds the scene from a JSON;
+  `importer/run_import.gd` runs it headless
+- `tests/run_roundtrip.gd` — imports and re-exports every script (the repo's
+  `scripts/` and `tests/fixtures/`) and checks they play the same
 
 ## Scene convention (what the exporter expects)
 
@@ -62,8 +70,9 @@ the player runtime consumes.
   run in child order, so drag them to reorder. Right-click a screen or layer →
   **Add VJ effect ▸** picks one of `visualizer/effects/` (Key black, Oval mask,
   Edge blur, Padding, Glow, Crop, Rounded corners, Keep center); **Empty** takes your own effect shader (include
-  `visualizer/effect_prelude.gdshaderinc`) in its `material`. The enabled ones
-  export as `config.effects`. Scenes from before effects were nodes have
+  `visualizer/effect_prelude.gdshaderinc`) in its `material`. They export as
+  `config.effects`; switched-off ones (`enabled` off) go along with
+  `"enabled": false`, which the player skips. Scenes from before effects were nodes have
   `effect_1..4` slots, which no longer preview or export: run **Tools > VJ:
   Convert effect slots to nodes** once (undoable). It moves them into nodes
   named after their shaders and rewrites the tracks.
@@ -101,7 +110,9 @@ the player runtime consumes.
 - Optional `VJViewer` child: the viewer's pose. Every key after t=0 on its
   position/rotation exports as a `vr_cut`; with `transition = fade_to_black`
   the event starts `fade_duration / 2` early so the cut lands at peak black
-  on the key's time. Rest pose should match the player's home (0, 2, 8).
+  on the key's time. The player starts every script at its home pose
+  (0, 2, 8) looking down −Z; a start pose (rest pose, or a key at t=0)
+  anywhere else exports as a hard `vr_cut` at t=0.
 - A single `AnimationPlayer` child of the root holds one Animation named
   `"main"`. Tracks (`<node>` is the path from the root, e.g. `screens/screen_left`;
   the target is that node's name):
@@ -168,6 +179,43 @@ turn sync off, use the player's **F2 → Config → Editor sync** toggle. The pr
 Scrubbing the `main` animation in the editor is the rough in-editor preview;
 the player is the accurate one.
 
+## Import
+
+**Tools > VJ: Import script.json…** picks a script and builds `res://main.tscn`
+(made the main scene), with custom prefabs copied to `prefabs/` and custom
+shaders to `shaders/`. It only runs in an empty project (no scenes outside
+`addons/`): the JSON is the master and the scene a view of it, so there's
+nothing to merge. The scene's `output_path` is the JSON you imported, so
+**Export** / **Preview** write back to it. Headless:
+
+```
+godot --headless --path <empty project> --script res://addons/vj_editor/importer/run_import.gd -- <script.json>
+```
+
+Everything the exporter writes imports exactly, so exporting an imported
+script gives the same script. Hand-written scripts can say a few things a
+scene can't; the importer converts them and lists each in the Output panel:
+
+- a track mixing interpolations, or using `ease`, becomes Bezier tracks with
+  the handles that draw the same curve (a `step` among other interpolations
+  holds until 1 ms before its next key)
+- an object spawned again with a different prefab, transform, parent or
+  config keeps its first spawn's
+- the scene's viewer has one transition, so cuts with different ones all
+  get the first cut's
+- `vr_teleport`, top-level `objects` (the player ignores them too) and
+  `media.audio` are dropped
+
+To check the round trip, from an authoring project with the addon linked in:
+
+```
+godot --headless --path project_script_example --script res://addons/vj_editor/tests/run_roundtrip.gd
+```
+
+It imports and exports each script twice and fails if the export plays
+differently from the original (every track sampled through the player's
+own interpolation) or changes on the second pass.
+
 ## Sharing between projects
 
 The canonical copy of this addon lives at `<repo-root>/addon_vj/`. Each Godot
@@ -181,7 +229,6 @@ New-Item -ItemType Junction -Path "<project>/addons/vj_editor" -Target "<repo>/a
 
 ## Not-yet-implemented
 
-- Import (JSON → scene) — this addon is export-only for now
 - Fade `transition` on despawn — the exporter emits a plain despawn event
 - `vr_teleport` (the Viewer only produces `vr_cut`s)
 - Multiple animations / clip chaining

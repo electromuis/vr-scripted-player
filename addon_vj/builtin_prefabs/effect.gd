@@ -23,8 +23,9 @@ extends Node
 		material = value
 		update_configuration_warnings()
 
-## Off: skipped in the preview and left out of the export. Not animatable
-## (the player's effect chain is fixed per spawn).
+## Off: skipped in the preview and in the player (it exports with
+## `"enabled": false`, so it's kept). Not animatable (the player's effect
+## chain is fixed per spawn).
 @export var enabled: bool = true
 
 

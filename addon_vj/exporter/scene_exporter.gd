@@ -56,6 +56,8 @@ const _VISUALIZER_ADDON_DIR := "res://addons/vj_editor/visualizer/"
 const _VISUALIZER_PLAYER_DIR := "res://player/visualizer/"
 const _SHADER_PARAM_PREFIX := "shader_parameter/"
 const _DISPLAY_PROPS := ["curvature", "vertical_curvature", "opacity"]
+## Where the player starts every script (VJViewer's rest pose should match).
+const VIEWER_HOME_POSITION := Vector3(0, 2, 8)
 ## Builtin prefab keys → the player's copies.
 const _PLAYER_PREFABS := {
 	"screen": "res://player/prefabs/screen.tscn",
@@ -129,10 +131,10 @@ static func _build_json(scene, out_dir: String) -> Dictionary:
 	if animation != null:
 		for t in _tracks_from_animation(scene, animation, objects):
 			tracks.append(t)
-		var viewer := _find_viewer(scene)
-		if viewer != null:
-			for e in _viewer_cuts(animation, viewer):
-				tracks.append(e)
+	var viewer := _find_viewer(scene)
+	if viewer != null:
+		for e in _viewer_cuts(animation, viewer):
+			tracks.append(e)
 
 	var media := {"video": String(scene.video_relative_path)}
 	if float(scene.duration) > 0.0:
@@ -666,10 +668,19 @@ static func _handles_to_json(handles, value, dv_scale: float):
 
 ## Every viewer key after t=0 is a cut. With a fade, the event starts half
 ## the fade early so the jump happens at peak black, on the key's time —
-## which is also when the editor preview (the camera itself) jumps.
+## which is also when the editor preview (the camera itself) jumps. A start
+## pose (at t=0) away from the player's home pose is a hard cut at t=0.
 static func _viewer_cuts(animation: Animation, viewer: Node3D) -> Array:
-	var pos_track := animation.find_track(NodePath("%s:position" % viewer.name), Animation.TYPE_VALUE)
-	var rot_track := animation.find_track(NodePath("%s:rotation" % viewer.name), Animation.TYPE_VALUE)
+	var pos_track := animation.find_track(NodePath("%s:position" % viewer.name), Animation.TYPE_VALUE) if animation != null else -1
+	var rot_track := animation.find_track(NodePath("%s:rotation" % viewer.name), Animation.TYPE_VALUE) if animation != null else -1
+	var out: Array = []
+	var start_pos: Vector3 = animation.value_track_interpolate(pos_track, 0.0) if pos_track >= 0 else viewer.position
+	var start_rot: Vector3 = animation.value_track_interpolate(rot_track, 0.0) if rot_track >= 0 else viewer.rotation
+	if not start_pos.is_equal_approx(VIEWER_HOME_POSITION) or not start_rot.is_equal_approx(Vector3.ZERO):
+		out.append({"type": "event", "t": 0.0, "action": "vr_cut", "to": {
+			"position": _vec3_to_array(start_pos, false),
+			"rotation_deg": _vec3_to_array(start_rot, true),
+		}})
 	var times: Array = []
 	for track in [pos_track, rot_track]:
 		if track < 0:
@@ -681,7 +692,6 @@ static func _viewer_cuts(animation: Animation, viewer: Node3D) -> Array:
 	times.sort()
 
 	var fade := float(viewer.fade_duration) if String(viewer.transition) == "fade_to_black" else 0.0
-	var out: Array = []
 	for t in times:
 		var pos: Vector3 = animation.value_track_interpolate(pos_track, t) if pos_track >= 0 else viewer.position
 		var rot: Vector3 = animation.value_track_interpolate(rot_track, t) if rot_track >= 0 else viewer.rotation
@@ -772,17 +782,24 @@ static func _look_config(node: Node3D, out_dir: String, shaders: Dictionary) -> 
 	return cfg
 
 
-## The enabled VJEffect children, in order, as `config.effects` (their
-## index is the `effect<N>` track target).
+## The VJEffect children with a shader, in order, as `config.effects`.
+## Switched-off ones go along with `"enabled": false` (the player skips
+## them); the enabled ones' index among themselves is the `effect<N>`
+## track target.
 static func _effects_config(node: Node3D, out_dir: String, shaders: Dictionary) -> Array:
 	if not node.call("legacy_effects").is_empty():
 		push_warning("VJ export: '%s' still has effect_1..4 slots, which no longer export. Run Tools > VJ: Convert effect slots to nodes." % node.name)
 	var out: Array = []
-	for mat in node.call("effect_materials"):
+	for child in node.get_children():
+		if child.get_script() != VJEffectScript or child.material == null or child.material.shader == null:
+			continue
+		var mat: ShaderMaterial = child.material
 		var e := {"shader": _register_shader(mat.shader, out_dir, shaders)}
 		var params := _authored_params(mat, ["input_tex", "display_aspect", "picture_rect", "picture_corners", "prepass_tex", "prepass"])
 		if not params.is_empty():
 			e["params"] = params
+		if not child.enabled:
+			e["enabled"] = false
 		out.append(e)
 	return out
 
