@@ -38,7 +38,7 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
 
 `.github/workflows/build.yml` runs on every push and pull request:
 
-1. **gde_gozen:** builds FFmpeg + gde_gozen (debug and release) for Linux x86_64, Windows x86_64, macOS arm64 + x86_64 and Android arm64 (Quest 3). The source is `GOZEN_GIT_URL` @ `GOZEN_REF` (default: [Codeberg upstream](https://codeberg.org/gozen/gde_gozen)), plus any patches in `ci/gde_gozen/patches/` (see the README there for our audio loading fix). Builds are cached in three layers: the finished library per gde_gozen commit + patches (nothing rebuilds), FFmpeg and its libraries per dependency commit + `build.py` (a new gde_gozen commit, e.g. a push to the fork, skips the 15–30 min FFmpeg build), and SCons' object cache (only changed C++ files recompile). GitHub scopes caches per branch, and a branch can read only its own and `master`'s, so the caches every branch shares are the ones `master`'s runs save; a weekly scheduled run on `master` keeps them from expiring. The binaries are never uploaded as artifacts: the other jobs restore them from that cache.
+1. **gde_gozen:** not built here. Both jobs download prebuilt binaries (debug and release) from a release of our fork, `GOZEN_REPO` @ `GOZEN_RELEASE` (`electromuis/gde_gozen`), with `ci/fetch_gozen.sh`. The fork's `.github/workflows/release.yml` builds FFmpeg + gde_gozen for Linux x86_64/arm64, Windows x86_64, macOS arm64 + x86_64 and Android arm64/arm32 and publishes them: push a `v*` tag there (or run it by hand), then point `GOZEN_RELEASE` at the new tag. The fork is private, so this repo needs a `GOZEN_TOKEN` secret: a token that can read the fork's contents (a fine-grained token with *Contents: read-only* on `electromuis/gde_gozen`).
 2. **Tests:** imports the project with Godot 4.7.2, checks gde_gozen loads (`tests/check_extensions.gd`), runs `tests/run.gd`.
 3. **Export and package:** exports with `project_engine/export_presets.cfg` and uploads one artifact holding:
    - Windows: `-setup.exe` installer and a portable `.zip`
@@ -51,7 +51,7 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
 
 The Quest APK is signed with the `ANDROID_KEYSTORE_BASE64` (base64 of the `.keystore`), `ANDROID_KEYSTORE_USER` (key alias) and `ANDROID_KEYSTORE_PASSWORD` repository secrets. Without them CI signs it with a throwaway key, and each build then has to be uninstalled before the next one installs.
 
-The helper scripts in `ci/` work locally too: `ci/setup_godot.sh --templates`, `ci/fetch_addons.sh [--android]`, `ci/build_gozen.sh <platform> <arch>`, `ci/package.sh <version>`.
+The helper scripts in `ci/` work locally too: `ci/setup_godot.sh --templates`, `ci/fetch_addons.sh [--android]`, `ci/fetch_gozen.sh <platform>-<arch>... | all` (needs `gh`, `GOZEN_REPO` and `GOZEN_RELEASE`), `ci/package.sh <version>`.
 
 ## Prerequisites
 

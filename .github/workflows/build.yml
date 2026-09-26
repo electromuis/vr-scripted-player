@@ -1,10 +1,9 @@
 name: Build
 
-# Every push and PR: build gde_gozen, run the tests, export and package all
-# platforms, upload the packages as a workflow artifact.
-# The gde_gozen binaries are never uploaded on their own: jobs hand them to each
-# other through the Actions cache, which can't be downloaded from the run page
-# the way artifacts can, and Windows / Linux builds pack them into the .pck.
+# Every push and PR: run the tests, export and package all platforms, upload
+# the packages as workflow artifacts. gde_gozen isn't built here: its binaries
+# come from a release of our fork (GOZEN_REPO @ GOZEN_RELEASE), which that
+# repo's release workflow builds.
 # A pushed tag (v1.2.3): the same, plus a GitHub release with the packages and
 # the commit messages since the previous tag.
 
@@ -14,12 +13,6 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
-  # Caches are per branch, but every branch can read master's. This keeps
-  # master's gde_gozen caches from expiring (GitHub drops caches unused for
-  # 7 days) so new branches start with a cache hit. Scheduled runs only
-  # restore/rebuild gde_gozen; they don't test, export or package.
-  schedule:
-    - cron: "23 4 * * 1"
 
 concurrency:
   group: build-${{ github.ref }}
@@ -27,166 +20,23 @@ concurrency:
 
 env:
   GODOT_VERSION: "4.7.2"
-  # gde_gozen source: any public git URL (upstream lives on Codeberg; the
-  # GitHub copy is an older mirror). Point it at the fork that carries the
-  # audio loading fix, and GOZEN_REF at a branch, tag or commit; pin a commit
-  # for reproducible builds. Patches in ci/gde_gozen/patches/ are applied on
-  # top either way.
-  GOZEN_GIT_URL: https://codeberg.org/gozen/gde_gozen.git
-  GOZEN_REF: HEAD
+  # gde_gozen binaries: a release of our fork (see its release workflow; push
+  # a v* tag there to publish one). The fork is private, so reading it takes
+  # the GOZEN_TOKEN secret: a token with read access to its contents.
+  GOZEN_REPO: electromuis/gde_gozen
+  GOZEN_RELEASE: v9.7-sp1
 
 jobs:
-  gozen-ref:
-    name: Resolve gde_gozen commit
-    runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.resolve.outputs.sha }}
-      cache-key: ${{ steps.resolve.outputs.cache-key }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: resolve
-        run: |
-          if [[ "$GOZEN_REF" =~ ^[0-9a-f]{40}$ ]]; then
-            SHA="$GOZEN_REF"
-          else
-            SHA="$(git ls-remote "$GOZEN_GIT_URL" "$GOZEN_REF" "refs/tags/$GOZEN_REF^{}" | tail -n1 | cut -f1)"
-          fi
-          [ -n "$SHA" ] || { echo "::error::Cannot resolve $GOZEN_REF in $GOZEN_GIT_URL"; exit 1; }
-          PATCHES="$(cat ci/gde_gozen/patches/*.patch ci/build_gozen.sh 2>/dev/null | sha256sum | cut -c1-16)"
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "cache-key=$SHA-$PATCHES" >> "$GITHUB_OUTPUT"
-          echo "gde_gozen: $GOZEN_GIT_URL @ $SHA (patches $PATCHES)"
-
-  gozen:
-    name: gde_gozen ${{ matrix.platform }}-${{ matrix.arch }}
-    needs: gozen-ref
-    runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { platform: linux, arch: x86_64, os: ubuntu-22.04 }
-          - { platform: windows, arch: x86_64, os: ubuntu-latest, container: "archlinux:latest" }
-          - { platform: macos, arch: arm64, os: macos-latest }
-          - { platform: macos, arch: x86_64, os: macos-15-intel }
-          - { platform: android, arch: arm64, os: ubuntu-latest, container: "archlinux:latest" }
-    env:
-      GOZEN_SHA: ${{ needs.gozen-ref.outputs.sha }}
-      ANDROID_SDK_ROOT: /opt/android-sdk
-      ANDROID_HOME: /opt/android-sdk
-      NDK_VERSION: "23.2.8568313"
-    steps:
-      - name: Install base packages (container)
-        if: matrix.container
-        run: |
-          pacman-key --init
-          pacman-key --populate archlinux
-          pacman -Syu --noconfirm git sudo bash yasm python scons gcc diffutils make wget tar unzip cmake pkgconf zstd
-          if [ "${{ matrix.platform }}" = windows ]; then pacman -S --noconfirm mingw-w64 ninja; fi
-          if [ "${{ matrix.platform }}" = android ]; then pacman -S --noconfirm jdk17-openjdk libtool; fi
-
-      - uses: actions/checkout@v4
-
-      # Also how the test and package jobs get the binaries (restored by key).
-      - name: Restore cached build
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: gozen-bin/${{ matrix.platform }}-${{ matrix.arch }}
-          key: gozen-${{ matrix.platform }}-${{ matrix.arch }}-${{ needs.gozen-ref.outputs.cache-key }}
-
-      - name: Install packages (Linux)
-        if: steps.cache.outputs.cache-hit != 'true' && matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y yasm nasm scons cmake build-essential diffutils pkg-config zlib1g-dev libbz2-dev liblzma-dev libvpx-dev
-
-      - name: Install packages (macOS)
-        if: steps.cache.outputs.cache-hit != 'true' && matrix.platform == 'macos'
-        run: brew install yasm nasm scons make libvpx cmake pkg-config
-
-      - name: Install Android SDK/NDK
-        if: steps.cache.outputs.cache-hit != 'true' && matrix.platform == 'android'
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
-        run: |
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/clt.zip
-          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-          unzip -q /tmp/clt.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
-          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" "platforms;android-34" > /dev/null
-          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-
-      # A new gde_gozen commit (e.g. a push to the fork) misses the cache above,
-      # but its FFmpeg is usually unchanged: that's cached on its own, keyed on
-      # the dependency commits, and SCons caches godot-cpp's and the
-      # extension's objects, so only what changed gets recompiled.
-      - name: Check out gde_gozen
-        id: src
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          git config --global --add safe.directory '*'
-          ci/build_gozen.sh checkout
-          echo "deps-key=$(ci/build_gozen.sh deps-key ${{ matrix.platform }} ${{ matrix.arch }})" >> "$GITHUB_OUTPUT"
-
-      - name: Restore cached FFmpeg
-        id: ffmpeg-cache
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: gde_gozen/ffmpeg/bin
-          key: ffmpeg-${{ matrix.platform }}-${{ matrix.arch }}-${{ steps.src.outputs.deps-key }}
-
-      - name: Build FFmpeg
-        if: steps.cache.outputs.cache-hit != 'true' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        env:
-          JAVA_HOME: ${{ matrix.platform == 'android' && '/usr/lib/jvm/java-17-openjdk' || '' }}
-        run: ci/build_gozen.sh ffmpeg ${{ matrix.platform }} ${{ matrix.arch }}
-
-      # Saved right away, so a failure in a later step doesn't throw it away.
-      - name: Save FFmpeg
-        if: steps.cache.outputs.cache-hit != 'true' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: gde_gozen/ffmpeg/bin
-          key: ffmpeg-${{ matrix.platform }}-${{ matrix.arch }}-${{ steps.src.outputs.deps-key }}
-
-      - name: Restore SCons cache
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache@v4
-        with:
-          path: scons-cache
-          key: scons-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}
-          restore-keys: scons-${{ matrix.platform }}-${{ matrix.arch }}-
-
-      - name: Build gde_gozen
-        if: steps.cache.outputs.cache-hit != 'true'
-        env:
-          JAVA_HOME: ${{ matrix.platform == 'android' && '/usr/lib/jvm/java-17-openjdk' || '' }}
-        run: |
-          # $PWD, not github.workspace: that's the host path in container jobs.
-          SCONS_CACHE_DIR="$PWD/scons-cache" ci/build_gozen.sh extension ${{ matrix.platform }} ${{ matrix.arch }}
-          # Old objects pile up in the SCons cache; start over once it's big.
-          if [ "$(du -sm scons-cache | cut -f1)" -gt 1500 ]; then rm -rf scons-cache; fi
-
   test:
     name: Tests
-    if: github.event_name != 'schedule'
-    needs: [gozen-ref, gozen]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache/restore@v4
-        with:
-          path: gozen-bin/linux-x86_64
-          key: gozen-linux-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
-          fail-on-cache-miss: true
       - name: Set up Godot and addons
+        env:
+          GH_TOKEN: ${{ secrets.GOZEN_TOKEN || github.token }}
         run: |
-          mkdir -p project_engine/addons/gde_gozen/bin
-          cp gozen-bin/*/* project_engine/addons/gde_gozen/bin/
+          ci/fetch_gozen.sh linux-x86_64
           ci/setup_godot.sh
           ci/fetch_addons.sh
       - name: Import project
@@ -198,8 +48,6 @@ jobs:
 
   package:
     name: Export and package
-    if: github.event_name != 'schedule'
-    needs: [gozen-ref, gozen]
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -222,36 +70,10 @@ jobs:
           # Android wants a numeric, increasing versionCode and a plain versionName.
           sed -i "/^\[preset.3.options\]/a version/code=${GITHUB_RUN_NUMBER}\nversion/name=\"$VERSION\"" project_engine/export_presets.cfg
 
-      - uses: actions/cache/restore@v4
-        with:
-          path: gozen-bin/linux-x86_64
-          key: gozen-linux-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v4
-        with:
-          path: gozen-bin/windows-x86_64
-          key: gozen-windows-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v4
-        with:
-          path: gozen-bin/macos-arm64
-          key: gozen-macos-arm64-${{ needs.gozen-ref.outputs.cache-key }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v4
-        with:
-          path: gozen-bin/macos-x86_64
-          key: gozen-macos-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v4
-        with:
-          path: gozen-bin/android-arm64
-          key: gozen-android-arm64-${{ needs.gozen-ref.outputs.cache-key }}
-          fail-on-cache-miss: true
-      - name: Collect gde_gozen binaries
-        run: |
-          mkdir -p project_engine/addons/gde_gozen/bin
-          cp gozen-bin/*/* project_engine/addons/gde_gozen/bin/
-          rm -rf gozen-bin
+      - name: Fetch gde_gozen binaries
+        env:
+          GH_TOKEN: ${{ secrets.GOZEN_TOKEN || github.token }}
+        run: ci/fetch_gozen.sh linux-x86_64 windows-x86_64 macos-arm64 macos-x86_64 android-arm64
 
       - name: Restore Godot export templates
         uses: actions/cache@v4
