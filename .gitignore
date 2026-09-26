@@ -63,3 +63,4 @@ project_script_forest_tunnel/addons/gde_gozen
 # Downloaded by CI (see ci/fetch_addons.sh)
 project_engine/addons/godotopenxrvendors/
 project_engine/android/
+gozen-bin/

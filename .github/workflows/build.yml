@@ -2,6 +2,9 @@ name: Build
 
 # Every push and PR: build gde_gozen, run the tests, export and package all
 # platforms, upload the packages as a workflow artifact.
+# The gde_gozen binaries are never uploaded on their own: jobs hand them to each
+# other through the Actions cache, which can't be downloaded from the run page
+# the way artifacts can, and Windows / Linux builds pack them into the .pck.
 # A pushed tag (v1.2.3): the same, plus a GitHub release with the packages and
 # the commit messages since the previous tag.
 
@@ -77,11 +80,12 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      # Also how the test and package jobs get the binaries (restored by key).
       - name: Restore cached build
         id: cache
         uses: actions/cache@v4
         with:
-          path: gozen-bin
+          path: gozen-bin/${{ matrix.platform }}-${{ matrix.arch }}
           key: gozen-${{ matrix.platform }}-${{ matrix.arch }}-${{ needs.gozen-ref.outputs.cache-key }}
 
       - name: Install packages (Linux)
@@ -115,25 +119,21 @@ jobs:
           git config --global --add safe.directory '*'
           ci/build_gozen.sh ${{ matrix.platform }} ${{ matrix.arch }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gozen-bin-${{ matrix.platform }}-${{ matrix.arch }}
-          path: gozen-bin
-          if-no-files-found: error
-          retention-days: 3
-
   test:
     name: Tests
-    needs: gozen
+    needs: [gozen-ref, gozen]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache/restore@v4
         with:
-          name: gozen-bin-linux-x86_64
-          path: project_engine/addons/gde_gozen/bin
+          path: gozen-bin/linux-x86_64
+          key: gozen-linux-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
       - name: Set up Godot and addons
         run: |
+          mkdir -p project_engine/addons/gde_gozen/bin
+          cp gozen-bin/*/* project_engine/addons/gde_gozen/bin/
           ci/setup_godot.sh
           ci/fetch_addons.sh
       - name: Import project
@@ -145,7 +145,7 @@ jobs:
 
   package:
     name: Export and package
-    needs: gozen
+    needs: [gozen-ref, gozen]
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -167,11 +167,36 @@ jobs:
           # Android wants a numeric, increasing versionCode and a plain versionName.
           sed -i "/^\[preset.3.options\]/a version/code=${GITHUB_RUN_NUMBER}\nversion/name=\"$VERSION\"" project_engine/export_presets.cfg
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache/restore@v4
         with:
-          pattern: gozen-bin-*
-          path: project_engine/addons/gde_gozen/bin
-          merge-multiple: true
+          path: gozen-bin/linux-x86_64
+          key: gozen-linux-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/windows-x86_64
+          key: gozen-windows-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/macos-arm64
+          key: gozen-macos-arm64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/macos-x86_64
+          key: gozen-macos-x86_64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: gozen-bin/android-arm64
+          key: gozen-android-arm64-${{ needs.gozen-ref.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - name: Collect gde_gozen binaries
+        run: |
+          mkdir -p project_engine/addons/gde_gozen/bin
+          cp gozen-bin/*/* project_engine/addons/gde_gozen/bin/
+          rm -rf gozen-bin
 
       - name: Restore Godot export templates
         uses: actions/cache@v4
@@ -200,6 +225,10 @@ jobs:
           export_one "Linux" "$PWD/build/linux/ShaderPlayerVR.x86_64"
           export_one "macOS" "$PWD/build/macos/ShaderPlayerVR.zip"
           ls -laR build
+          # gde_gozen is packed into the .pck on Windows / Linux, never shipped loose.
+          if [ -n "$(find build/windows build/linux -iname '*gozen*')" ]; then
+            echo "::error::gde_gozen library exported next to the executable"; exit 1
+          fi
 
       - uses: actions/setup-java@v4
         with:

@@ -6,7 +6,7 @@
 #
 # GOZEN_REPO and GOZEN_SHA pick the source (see .github/workflows/build.yml).
 # Every ci/gde_gozen/patches/*.patch is applied on top, in name order.
-# Binaries end up in ./gozen-bin.
+# Binaries end up in ./gozen-bin/<platform>-<arch>.
 set -euo pipefail
 
 PLATFORM="$1"
@@ -41,6 +41,7 @@ JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 scons -j"$JOBS" target=template_debug platform="$PLATFORM" arch="$ARCH"
 scons -j"$JOBS" target=template_release platform="$PLATFORM" arch="$ARCH"
 
-mkdir -p "$ROOT/gozen-bin"
-cp -r test_room/addons/gde_gozen/bin/. "$ROOT/gozen-bin/"
-ls -la "$ROOT/gozen-bin"
+OUT="$ROOT/gozen-bin/$PLATFORM-$ARCH"
+mkdir -p "$OUT"
+cp -r test_room/addons/gde_gozen/bin/. "$OUT/"
+ls -la "$OUT"

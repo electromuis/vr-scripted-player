@@ -38,7 +38,7 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
 
 `.github/workflows/build.yml` runs on every push and pull request:
 
-1. **gde_gozen:** builds FFmpeg + gde_gozen (debug and release) for Linux x86_64, Windows x86_64, macOS arm64 + x86_64 and Android arm64 (Quest 3). The source is `GOZEN_REPO` @ `GOZEN_REF`, plus any patches in `ci/gde_gozen/patches/` (see the README there for our audio loading fix). Builds are cached per commit + patches, so only the first run pays the ~30 min FFmpeg build.
+1. **gde_gozen:** builds FFmpeg + gde_gozen (debug and release) for Linux x86_64, Windows x86_64, macOS arm64 + x86_64 and Android arm64 (Quest 3). The source is `GOZEN_REPO` @ `GOZEN_REF`, plus any patches in `ci/gde_gozen/patches/` (see the README there for our audio loading fix). Builds are cached per commit + patches, so only the first run pays the ~30 min FFmpeg build. The binaries are never uploaded as artifacts: the other jobs restore them from that cache.
 2. **Tests:** imports the project with Godot 4.7.2, checks gde_gozen loads (`tests/check_extensions.gd`), runs `tests/run.gd`.
 3. **Export and package:** exports with `project_engine/export_presets.cfg` and uploads one artifact holding:
    - Windows: `-setup.exe` installer and a portable `.zip`
@@ -46,6 +46,7 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
    - macOS: universal `.app` in a `.zip` (ad-hoc signed, not notarized: right-click → Open the first time)
    - Quest 3: `.apk` (sideload with `adb install` or SideQuest; Meta OpenXR vendors plugin)
    - `-portable-all-platforms.zip` with all of the above unpacked
+   Windows and Linux builds carry no loose gde_gozen library: it is packed into the `.pck` inside the executable, and `player/runtime/gozen_loader.gd` (the first autoload) writes it to `user://gozen/` and loads it on startup. On macOS and Quest it is inside the `.app` / `.apk`, as usual.
 4. **Release:** pushing a tag `v*` (`git tag v0.2.0 && git push origin v0.2.0`) creates a GitHub release with those files, and the commit messages since the previous tag as its notes. Tags with a `-` (`v0.2.0-beta`) are marked pre-release.
 
 The Quest APK is signed with the `ANDROID_KEYSTORE_BASE64` (base64 of the `.keystore`), `ANDROID_KEYSTORE_USER` (key alias) and `ANDROID_KEYSTORE_PASSWORD` repository secrets. Without them CI signs it with a throwaway key, and each build then has to be uninstalled before the next one installs.
