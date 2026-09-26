@@ -4,6 +4,12 @@ Plan for a VR editor ("Studio") for VJ scripts: build and perform a piece from i
 
 Branch: `claude/sweet-bardeen-mjgzvk`.
 
+## Working with the user
+- **Show pictures between steps.** The user likes seeing rendered screenshots as work goes, not just at the end. After each visible change, render it (`tools/cloud/run.sh`, see *Working in the cloud container*), look at the images yourself first (fix anything off), then send them (SendUserFile, `display: render`), several at once as a contact sheet (`tools/cloud/sheet.sh`). Real renders beat mockups; mockups (`docs/studio/*.svg`) only for things that don't exist yet.
+- **No headset available to check.** The user can't test VR right now, only look at pictures. So everything is proven with tests, driving the real main scene, and renders; say plainly what couldn't be verified (VR, two-eye rendering, controller feel, frame rate on the Quest 3).
+- **Target:** Quest 3 over Link / Air Link / Virtual Desktop to a Windows PC.
+- Commit and push each milestone to the branch with docs updated (README for user-facing features, this file for status).
+
 ## Decisions
 
 1. **The script JSON is the master format**, not a Godot source project.
@@ -73,6 +79,21 @@ Rejected alternatives, and why:
 - **Tests:** `tests/test_camera_fx.gd` (10) covers compiling, sources and params, error lines, file discovery, settings and presets, limits, and the script block and tracks.
 - **Checked by rendering** under Xvfb with Mesa's software Vulkan (lavapipe): every built-in compiles and renders over the real main scene, the open menu stays untouched, a broken user file shows `line 4: 'wobbel' : undeclared identifier`, and a script's camera block overrides the preset with its strength track and the user's cap applied. Screenshots in `docs/player/`. **Not tried in a headset:** the per-eye path (two views) is written for multiview but only one view ran here.
 - **Left for later:** several effects at once (chaining), feedback trails (needs the previous frame), and Shadertoy `mainImage` code as camera effects.
+
+## Next: M0, extract the stage from `main.gd`
+Behaviour must not change; this is the groundwork for Studio sharing the player's rendering. `project_engine/player/main.gd` is about 1,100 lines doing two jobs.
+
+**Core, moves to `player/stage/` (a `Stage` node, scene + script) that Studio will reuse:**
+- Nodes: WorldEnvironment, DirectionalLight3D, Stage (Floor, ScreenMount), ScriptRunner, XRMode, XRRig, FloatingPanel (the menu stays per app, but its node/placement helpers are shared), UI/FadeOverlay.
+- Functions: `_init_video`, `_on_object_spawned`, `_load_video_for`, `_show_loading_thumbnail`, `_on_video_loaded`, `_on_video_load_failed`, `_init_screen_settings`, `_apply_screen_settings`, `_apply_screen_display`, `_screens_under`, `_apply_display_to`, `_rebuild_layers`, `_apply_layer`, `_place_layer`, `_place_layers`, `_update_layer_anchor`, `_init_camera_fx`, `_update_camera_fx`, `_update_audio_active`, `_script_layers`, `_on_curvature_maybe_changed`, `_apply_curvature`, `_current_projection`, `_apply_projection`, `_apply_video_to_layer`, `_apply_look_for`, `_on_event_fired`, `_apply_camera_cut`, `_snap_camera`, `reset_view`, `_on_entered_vr` / `_on_exited_vr` (the XR half), the input router setup (`_init_input`) with the app registering its own commands.
+
+**Shell, stays in `main.gd` (the player app):** CLI args, `open_file` / `open_url` / files dropped, playlist (`play_next`, `play_previous`, `_step_playlist`), DLNA, Whirligig, live sync, presets UI wiring (`_bind_panel_content`), wrist HUD binding, media controls, top bar / status / FPS label, `_on_command` for player commands, quit.
+
+**Steps**
+1. Create `player/stage/stage.tscn` + `stage.gd` with the core nodes and functions above; `main.tscn` instances it and `main.gd` talks to it through a small API (open a timeline / video, play, seek, settings objects, signals for loaded / failed / cut).
+2. Keep node paths the tests and checks use working, or update them (`tests/*`, `tools/cloud/checks/*`: they reach `main._router`, `main._layers`, `main._camera_fx`, `main.floating_panel`, `main.runner`, `main._player_settings`).
+3. Prove nothing changed: all tests pass (160 now); `HEADLESS=1 tools/cloud/run.sh checks/drive.gd`, `checks/drive_controls.gd`, `checks/drive_script_fx.gd` print the same as before; `tools/cloud/run.sh checks/shot_fx.gd`, `checks/shot_ui.gd`, `checks/shot_controls.gd` render the same pictures. Send the user a contact sheet of before/after.
+4. Then M1 (Studio skeleton): `project_engine/studio/studio.tscn` = stage + studio rig, open a piece (one video + its JSON), Play/Edit toggle, save, undo, the edit model with tests.
 
 ## Studio design
 
@@ -363,13 +384,18 @@ M1–M3 are the smallest thing that's already better than the desktop for layout
 - `scripts/minimal` has no objects, so the exporter refuses it (by design). The round-trip test skips it.
 
 ## Working in the cloud container
-- **No Godot preinstalled.** Download the project's version (4.7.1):
-  `curl -sSL -o g.zip https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip && unzip g.zip`
-  Godot 4.4 silently drops parts of 4.7-saved scenes (`libraries/ =`, `unique_id=`); don't use it.
-- **Player tests:** `cd project_engine && godot --headless --import && godot --headless --script res://tests/run.gd`.
-- **XR Tools** isn't in the repo; without it, anything touching the XR rig doesn't compile and those tests pass without checking much. Install 4.5.1 into `project_engine/addons/godot-xr-tools/` (gitignored) from `https://github.com/GodotVR/godot-xr-tools/releases/download/4.5.1/godot-xr-tools.zip`. Under Godot 4.7 its `objects/viewport_2d_in_3d.gd` fails to parse: add `return null` at the end of `_property_get_revert` in the local copy.
-- **gde_gozen has no Linux binary here**, so `main.gd` doesn't compile in the container. To run the real main scene, copy `project_engine` to the scratchpad and replace `GoZenVideo.new()` / `AudioStreamFFmpeg.new()` (in `player/video_bridge.gd` and `addons/gde_gozen/video_playback.gd`) with `ClassDB.instantiate(...)` and drop those type hints. Then a `SceneTree` script can instantiate `res://player/main.tscn` and drive it.
-- **Forward+ (Vulkan) rendering** for compositor effects: download `mesa-vulkan-drivers` with `apt-get download`, unpack it with `dpkg-deb -x`, point a copy of `lvp_icd.json` at the unpacked `libvulkan_lvp.so`, and run with `VK_ICD_FILENAMES=<that json>` plus `--rendering-method forward_plus --rendering-driver vulkan` under `xvfb-run`.
-- **Screenshots:** Xvfb and Mesa are installed. `xvfb-run -a -s "-screen 0 1600x1000x24" godot --rendering-method gl_compatibility --rendering-driver opengl3 --script <script>` renders for real; a panel's viewport only redraws while the panel is shown (`floating_panel.toggle()`).
-- **Round-trip test:** link the addon into an authoring project first (gitignored, like your Windows junctions): `ln -sfn ../../addon_vj project_script_example/addons/vj_editor`. Then `cd project_script_example && godot --headless --import && godot --headless --script res://addons/vj_editor/tests/run_roundtrip.gd`.
-- **Stray `.import` edits:** headless `--import` rewrites a few `.import` files (gde_gozen icons, `effect_icon.svg.import`). Revert them with `git checkout` before committing. `.uid` files and `.godot/` are gitignored.
+The container has no Godot, no GPU and no headset. Two scripts set everything up and run checks against the real player (all state in `$WORK`, default `/tmp/vj_cloud`; point it at the scratchpad if preferred):
+
+```
+tools/cloud/setup.sh                                  # once per container: Godot 4.7.1, XR Tools, software Vulkan
+tools/cloud/run.sh checks/shot_fx.gd                  # rendered (Forward+ on lavapipe, under Xvfb) -> $WORK/shots/*.png
+HEADLESS=1 tools/cloud/run.sh checks/drive.gd         # no rendering
+tools/cloud/sheet.sh out.png a.png b.png ...          # contact sheet to send the user
+```
+
+- **Checks** (`tools/cloud/checks/`): `drive.gd` (every command, keys, contexts), `drive_controls.gd` (rebinding), `drive_script_fx.gd` (script camera effect, limits), `shot_fx.gd` (each camera effect over a test card, menu mask), `shot_ui.gd` (Camera tab effect section, compile error, Config tab), `shot_controls.gd` (Controls tab; `SCROLL=1` for the bottom). Copy one to write a new check: a `SceneTree` script that instantiates `res://player/main.tscn`, waits a few frames, drives it, and saves `root.get_texture().get_image()` (the 3D view) or a panel's `content.get_viewport()` image (open it first with `floating_panel.toggle()`: a hidden panel doesn't redraw).
+- **Why a copy:** `run.sh` copies `project_engine` to `$WORK/engine_copy` and makes the gde_gozen classes dynamic (`ClassDB.instantiate`), since there's no Linux decoder build and `main.gd` wouldn't compile otherwise. The screen shows a placeholder instead of video (checks can put a test image on it with `set_source_texture`). Never commit that patch.
+- **Player tests:** `cd project_engine && $GODOT --headless --import && $GODOT --headless --script res://tests/run.gd` (`$GODOT` = `$WORK/godot/Godot_v4.7.1-stable_linux.x86_64`). They need XR Tools installed (setup.sh does it, gitignored, with a one-line patch for Godot 4.7); without it the XR rig doesn't compile and those tests pass without checking much.
+- **Round-trip test (addon):** link the addon into an authoring project (gitignored, like the Windows junctions): `ln -sfn ../../addon_vj project_script_example/addons/vj_editor`, then `cd project_script_example && $GODOT --headless --import && $GODOT --headless --script res://addons/vj_editor/tests/run_roundtrip.gd`.
+- **Godot 4.4 won't do:** it silently drops parts of 4.7-saved scenes (`libraries/ =`, `unique_id=`).
+- **Stray `.import` edits:** `--import` rewrites a few `.import` files (gde_gozen icons, `effect_icon.svg.import`); revert them with `git checkout` before committing. `.uid` files and `.godot/` are gitignored.
