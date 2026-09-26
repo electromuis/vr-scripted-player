@@ -61,7 +61,7 @@ Open a video or a script from **F2 → Files**, by dropping it on the window, or
 
 Studio opens a script and lets you change it from inside the headset, on the player's own renderer, so what you see while editing is what the player will show. It's being built in steps (see [VR Studio — Plan.md](./VR%20Studio%20%E2%80%94%20Plan.md)); so far it opens a piece, plays and scrubs it, switches between Play and Edit, selects and moves things by hand (keyed or not), undoes and redoes, and saves. An inspector for configs and effects comes next.
 
-- **Start it** from the same build as the player, with Studio's scene and the piece: `VRmviewer.exe res://studio/studio.tscn -- --piece path\to\video.json` (or `build_and_run.bat studio [video.json]`). A video with a same-name `.json` next to it works as the piece too; `--start <seconds>` opens at that time, `--vr` / `--desktop` as in the player.
+- **Start it** from its own build (the *Studio* download from CI, or `build_and_run.bat studio [video.json]`) with the piece: `ShaderPlayerVR-Studio.exe -- --piece path\to\video.json`. From the Godot editor, run `res://studio/studio.tscn` with the same arguments. A video with a same-name `.json` next to it works as the piece too; `--start <seconds>` opens at that time, `--vr` / `--desktop` as in the player.
 - **Play and Edit:** Play is the audience view with nothing added. Edit shows the piece's name, the time, whether there are unsaved changes and what just happened, on the left wrist in the headset and in the corner of the desktop window. Switching keeps the playhead.
 - **Controls** (defaults; Studio's own, separate from the player's):
 
@@ -111,6 +111,7 @@ Studio opens a script and lets you change it from inside the headset, on the pla
    - Linux: `.deb` and a portable `.tar.gz`
    - macOS: universal `.app` in a `.zip` (ad-hoc signed, not notarized: right-click → Open the first time)
    - Quest 3: `.apk` (sideload with `adb install` or SideQuest; Meta OpenXR vendors plugin)
+   - Studio (the VR editor): `ShaderPlayerVR-Studio-…-windows-x86_64-portable.zip` and `-linux-x86_64-portable.tar.gz`. Same project, exported with the `studio` feature, which switches the main scene to `res://studio/studio.tscn` (`application/run/main_scene.studio`); the player's own builds leave `studio/` out
    - `-portable-all-platforms.zip` with all of the above unpacked
    Windows and Linux builds carry no loose gde_gozen library: it is packed into the `.pck` inside the executable, and `player/runtime/gozen_loader.gd` (the first autoload) writes it to `user://gozen/` and loads it on startup. On macOS and Quest it is inside the `.app` / `.apk`, as usual.
 4. **Release:** pushing a tag `v*` (`git tag v0.2.0 && git push origin v0.2.0`) creates a GitHub release with those files, and the commit messages since the previous tag as its notes. Tags with a `-` (`v0.2.0-beta`) are marked pre-release.

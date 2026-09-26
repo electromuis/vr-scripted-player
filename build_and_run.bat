@@ -9,8 +9,8 @@ rem
 rem   build_and_run.bat                 the player, as above
 rem   build_and_run.bat studio [json]   Studio (the VR editor) instead, on the
 rem                                     moving-screen JSON or the one given.
-rem                                     Same .exe: Studio is its own main scene
-rem                                     (res://studio/studio.tscn).
+rem                                     Built from the "Studio Windows" preset
+rem                                     (the player's presets leave studio/ out).
 rem
 rem Godot 4.7 must be on PATH as `godot`. For step 2 you also need Windows
 rem export templates installed (Godot editor > Editor > Manage Export
@@ -28,6 +28,10 @@ set PRESET=Windows Desktop
 set APP=%~1
 set PIECE=%~2
 if "%PIECE%"=="" set PIECE=%SCRIPT_OUT%
+if /i "%APP%"=="studio" (
+    set PRESET=Studio Windows
+    set BINARY=%BUILD_DIR%\VRmviewer-Studio.exe
+)
 
 where godot >nul 2>&1
 if errorlevel 1 (
@@ -67,7 +71,7 @@ if not exist "%BINARY%" (
 echo.
 if /i "%APP%"=="studio" (
     echo === [3/3] Run Studio: %BINARY% with --piece %PIECE% ===
-    "%BINARY%" res://studio/studio.tscn -- --piece "%PIECE%"
+    "%BINARY%" -- --piece "%PIECE%"
     exit /b !ERRORLEVEL!
 )
 echo === [3/3] Run %BINARY% with --script %SCRIPT_OUT% ===

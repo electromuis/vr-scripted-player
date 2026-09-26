@@ -6,6 +6,8 @@
 #   ShaderPlayerVR-<ver>-linux-x86_64-portable.tar.gz
 #   ShaderPlayerVR-<ver>-macos-universal.zip            the .app
 #   ShaderPlayerVR-<ver>-quest3.apk                     sideload with adb / SideQuest
+#   ShaderPlayerVR-Studio-<ver>-windows-x86_64-portable.zip   the VR editor
+#   ShaderPlayerVR-Studio-<ver>-linux-x86_64-portable.tar.gz
 #   ShaderPlayerVR-<ver>-portable-all-platforms.zip     everything above, unpacked
 # Platforms missing from build/ are skipped.
 #
@@ -80,6 +82,20 @@ if [ -f "$BUILD/quest/$NAME.apk" ]; then
   cp "$BUILD/quest/$NAME.apk" "$DIST/$NAME-$VERSION-quest3.apk"
   mkdir -p "$ALL/quest3"
   cp "$BUILD/quest/$NAME.apk" "$ALL/quest3/$NAME.apk"
+fi
+
+# Studio (the VR editor): portable only, next to the player's installers.
+if [ -d "$BUILD/studio-windows" ]; then
+  extras "$BUILD/studio-windows"
+  (cd "$BUILD/studio-windows" && zip -qr9 "$DIST/$NAME-Studio-$VERSION-windows-x86_64-portable.zip" .)
+  cp -r "$BUILD/studio-windows" "$ALL/studio-windows"
+fi
+
+if [ -d "$BUILD/studio-linux" ]; then
+  extras "$BUILD/studio-linux"
+  tar -C "$BUILD" --transform "s|^studio-linux|$NAME-Studio-$VERSION|" \
+    -czf "$DIST/$NAME-Studio-$VERSION-linux-x86_64-portable.tar.gz" studio-linux
+  cp -r "$BUILD/studio-linux" "$ALL/studio-linux"
 fi
 
 (cd "$BUILD/all" && zip -qr9 -y "$DIST/$NAME-$VERSION-portable-all-platforms.zip" "$NAME-$VERSION")

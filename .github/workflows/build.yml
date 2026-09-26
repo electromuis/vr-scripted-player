@@ -271,9 +271,12 @@ jobs:
           export_one "Windows Desktop" "$PWD/build/windows/ShaderPlayerVR.exe"
           export_one "Linux" "$PWD/build/linux/ShaderPlayerVR.x86_64"
           export_one "macOS" "$PWD/build/macos/ShaderPlayerVR.zip"
+          # Studio, the VR editor: the same project with the "studio" feature.
+          export_one "Studio Windows" "$PWD/build/studio-windows/ShaderPlayerVR-Studio.exe"
+          export_one "Studio Linux" "$PWD/build/studio-linux/ShaderPlayerVR-Studio.x86_64"
           ls -laR build
           # gde_gozen is packed into the .pck on Windows / Linux, never shipped loose.
-          if [ -n "$(find build/windows build/linux -iname '*gozen*')" ]; then
+          if [ -n "$(find build/windows build/linux build/studio-windows build/studio-linux -iname '*gozen*')" ]; then
             echo "::error::gde_gozen library exported next to the executable"; exit 1
           fi
 
@@ -347,6 +350,18 @@ jobs:
           path: dist/ShaderPlayerVR-${{ steps.version.outputs.version }}-quest3.apk
           archive: false
           if-no-files-found: error
+      - name: Upload Studio Windows portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-Studio-${{ steps.version.outputs.version }}-windows-x86_64-portable.zip
+          archive: false
+          if-no-files-found: error
+      - name: Upload Studio Linux portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/ShaderPlayerVR-Studio-${{ steps.version.outputs.version }}-linux-x86_64-portable.tar.gz
+          archive: false
+          if-no-files-found: error
       - name: Upload All platforms portable
         uses: actions/upload-artifact@v7
         with:
@@ -380,7 +395,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          pattern: ShaderPlayerVR-${{ needs.package.outputs.version }}-*
+          pattern: ShaderPlayerVR-*${{ needs.package.outputs.version }}-*
           path: dist
           merge-multiple: true
 
